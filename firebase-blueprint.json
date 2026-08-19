@@ -1,0 +1,160 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile information",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Unique user authentication ID" },
+        "email": { "type": "string", "description": "User Google email address" },
+        "displayName": { "type": "string", "description": "User display name" },
+        "photoURL": { "type": "string", "description": "User avatar photo URL" },
+        "createdAt": { "type": "string", "description": "Creation timestamp" }
+      },
+      "required": ["userId", "email"]
+    },
+    "Conta": {
+      "title": "Conta",
+      "description": "Bank account or digital wallet",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Account unique ID" },
+        "userId": { "type": "string", "description": "Owner user UID" },
+        "nome": { "type": "string", "description": "Account name", "maxLength": 100 },
+        "instituicao": { "type": "string", "description": "Bank institution", "maxLength": 100 },
+        "tipo": { "type": "string", "description": "Account type", "enum": ["corrente", "poupanca", "investimento", "carteira_digital", "dinheiro"] },
+        "saldoInicial": { "type": "number", "description": "Initial balance" },
+        "saldoAtual": { "type": "number", "description": "Current balance" },
+        "cor": { "type": "string", "description": "Color theme hex code", "maxLength": 20 },
+        "icone": { "type": "string", "description": "Icon identifier", "maxLength": 50 },
+        "ativa": { "type": "boolean", "description": "Whether account is active" },
+        "criadaEm": { "type": "string", "description": "Creation ISO date" }
+      },
+      "required": ["id", "userId", "nome", "tipo", "saldoAtual", "ativa"]
+    },
+    "CartaoCredito": {
+      "title": "CartaoCredito",
+      "description": "Credit card representation",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Credit card unique ID" },
+        "userId": { "type": "string", "description": "Owner user UID" },
+        "nome": { "type": "string", "description": "Card identifier name", "maxLength": 100 },
+        "bandeira": { "type": "string", "description": "Card flag", "enum": ["visa", "mastercard", "elo", "amex", "hipercard", "outro"] },
+        "limiteTotal": { "type": "number", "description": "Total limit" },
+        "limiteDisponivel": { "type": "number", "description": "Available limit" },
+        "diaFechamento": { "type": "number", "description": "Closing day of month" },
+        "diaVencimento": { "type": "number", "description": "Due day of month" },
+        "contaDebitoPadraoId": { "type": "string", "description": "Default payment account ID" },
+        "cor": { "type": "string", "description": "Color hex code", "maxLength": 20 },
+        "ultimosDigitos": { "type": "string", "description": "Last 4 digits", "maxLength": 10 },
+        "ativo": { "type": "boolean", "description": "Whether card is active" }
+      },
+      "required": ["id", "userId", "nome", "bandeira", "limiteTotal", "limiteDisponivel", "diaFechamento", "diaVencimento", "ativo"]
+    },
+    "Categoria": {
+      "title": "Categoria",
+      "description": "Income or expense category",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Category unique ID" },
+        "userId": { "type": "string", "description": "Owner user UID" },
+        "nome": { "type": "string", "description": "Category name", "maxLength": 100 },
+        "tipo": { "type": "string", "description": "Category type", "enum": ["receita", "despesa"] },
+        "cor": { "type": "string", "description": "Hex color code", "maxLength": 20 },
+        "icone": { "type": "string", "description": "Lucide icon name", "maxLength": 50 },
+        "orcamentoMensal": { "type": "number", "description": "Optional monthly budget cap" },
+        "descricao": { "type": "string", "description": "Category description", "maxLength": 300 }
+      },
+      "required": ["id", "userId", "nome", "tipo", "cor", "icone"]
+    },
+    "Lancamento": {
+      "title": "Lancamento",
+      "description": "Financial transaction or record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Transaction ID" },
+        "userId": { "type": "string", "description": "Owner user UID" },
+        "tipo": { "type": "string", "description": "Transaction type", "enum": ["receita", "despesa", "transferencia"] },
+        "descricao": { "type": "string", "description": "Description", "maxLength": 250 },
+        "valor": { "type": "number", "description": "Transaction value" },
+        "categoriaId": { "type": "string", "description": "Category ID", "maxLength": 100 },
+        "contaId": { "type": "string", "description": "Account ID" },
+        "cartaoId": { "type": "string", "description": "Credit card ID" },
+        "faturaId": { "type": "string", "description": "Invoice ID" },
+        "contaDestinoId": { "type": "string", "description": "Target account ID for transfers" },
+        "dataCompetencia": { "type": "string", "description": "Competency date YYYY-MM-DD", "maxLength": 20 },
+        "dataVencimento": { "type": "string", "description": "Due date YYYY-MM-DD", "maxLength": 20 },
+        "dataPagamento": { "type": "string", "description": "Payment date YYYY-MM-DD", "maxLength": 20 },
+        "status": { "type": "string", "description": "Status", "enum": ["pendente", "pago", "cancelado"] },
+        "observacoes": { "type": "string", "description": "Notes", "maxLength": 500 },
+        "tags": { "type": "array", "description": "Tags list" },
+        "criadoEm": { "type": "string", "description": "Creation timestamp" },
+        "atualizadoEm": { "type": "string", "description": "Update timestamp" }
+      },
+      "required": ["id", "userId", "tipo", "descricao", "valor", "dataCompetencia", "dataVencimento", "status"]
+    },
+    "FaturaCartao": {
+      "title": "FaturaCartao",
+      "description": "Monthly credit card invoice",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Invoice ID" },
+        "userId": { "type": "string", "description": "Owner user UID" },
+        "cartaoId": { "type": "string", "description": "Card ID" },
+        "mesReferencia": { "type": "number", "description": "Reference month 1-12" },
+        "anoReferencia": { "type": "number", "description": "Reference year" },
+        "dataFechamento": { "type": "string", "description": "Closing date" },
+        "dataVencimento": { "type": "string", "description": "Due date" },
+        "valorTotal": { "type": "number", "description": "Total invoice balance" },
+        "status": { "type": "string", "description": "Invoice status", "enum": ["aberta", "fechada", "paga", "atrasada"] }
+      },
+      "required": ["id", "userId", "cartaoId", "mesReferencia", "anoReferencia", "status"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "System mutation audit log",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Log ID" },
+        "userId": { "type": "string", "description": "Owner user UID" },
+        "entidade": { "type": "string", "description": "Entity affected", "enum": ["lancamento", "conta", "cartao", "fatura", "categoria"] },
+        "entidadeId": { "type": "string", "description": "Target entity ID" },
+        "acao": { "type": "string", "description": "Action performed", "enum": ["criacao", "atualizacao", "exclusao", "pagamento", "cancelamento"] },
+        "detalhes": { "type": "string", "description": "Action details", "maxLength": 500 },
+        "dataHora": { "type": "string", "description": "Log timestamp" }
+      },
+      "required": ["id", "userId", "entidade", "entidadeId", "acao", "detalhes", "dataHora"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "User profile root document"
+    },
+    "/users/{userId}/contas/{contaId}": {
+      "schema": { "$ref": "#/entities/Conta" },
+      "description": "User accounts"
+    },
+    "/users/{userId}/cartoes/{cartaoId}": {
+      "schema": { "$ref": "#/entities/CartaoCredito" },
+      "description": "User credit cards"
+    },
+    "/users/{userId}/categorias/{categoriaId}": {
+      "schema": { "$ref": "#/entities/Categoria" },
+      "description": "User expense and income categories"
+    },
+    "/users/{userId}/lancamentos/{lancamentoId}": {
+      "schema": { "$ref": "#/entities/Lancamento" },
+      "description": "User financial transactions"
+    },
+    "/users/{userId}/faturas/{faturaId}": {
+      "schema": { "$ref": "#/entities/FaturaCartao" },
+      "description": "User credit card statements"
+    },
+    "/users/{userId}/auditLogs/{logId}": {
+      "schema": { "$ref": "#/entities/AuditLog" },
+      "description": "User audit trail"
+    }
+  }
+}

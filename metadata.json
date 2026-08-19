@@ -1,0 +1,8 @@
+{
+  "name": "Finance Pro",
+  "description": "Sistema completo de gestão financeira pessoal e empresarial Finance Pro.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

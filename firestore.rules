@@ -1,0 +1,78 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default deny all unknown collections
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // User profile document
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && request.resource.data.userId == userId;
+      allow update: if isOwner(userId) && request.resource.data.userId == userId;
+      allow delete: if isOwner(userId);
+
+      // Contas subcollection
+      match /contas/{contaId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(contaId) && request.resource.data.userId == userId;
+        allow update: if isOwner(userId) && isValidId(contaId) && request.resource.data.userId == userId;
+        allow delete: if isOwner(userId) && isValidId(contaId);
+      }
+
+      // Cartoes subcollection
+      match /cartoes/{cartaoId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(cartaoId) && request.resource.data.userId == userId;
+        allow update: if isOwner(userId) && isValidId(cartaoId) && request.resource.data.userId == userId;
+        allow delete: if isOwner(userId) && isValidId(cartaoId);
+      }
+
+      // Categorias subcollection
+      match /categorias/{categoriaId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(categoriaId) && request.resource.data.userId == userId;
+        allow update: if isOwner(userId) && isValidId(categoriaId) && request.resource.data.userId == userId;
+        allow delete: if isOwner(userId) && isValidId(categoriaId);
+      }
+
+      // Lancamentos subcollection
+      match /lancamentos/{lancamentoId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(lancamentoId) && request.resource.data.userId == userId;
+        allow update: if isOwner(userId) && isValidId(lancamentoId) && request.resource.data.userId == userId;
+        allow delete: if isOwner(userId) && isValidId(lancamentoId);
+      }
+
+      // Faturas subcollection
+      match /faturas/{faturaId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(faturaId) && request.resource.data.userId == userId;
+        allow update: if isOwner(userId) && isValidId(faturaId) && request.resource.data.userId == userId;
+        allow delete: if isOwner(userId) && isValidId(faturaId);
+      }
+
+      // Audit logs subcollection
+      match /auditLogs/{logId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(logId) && request.resource.data.userId == userId;
+        allow update: if isOwner(userId) && isValidId(logId) && request.resource.data.userId == userId;
+        allow delete: if isOwner(userId) && isValidId(logId);
+      }
+    }
+  }
+}
