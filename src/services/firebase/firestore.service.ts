@@ -26,6 +26,25 @@ import {
   AuditLog,
   DashboardResumo,
 } from '../../types';
+import { isItemInformativoFatura } from '../../utils/format';
+
+/**
+ * Remove recursivamente chaves com valor undefined para não falhar no Firestore SDK
+ */
+function sanitizeFirestoreData<T extends Record<string, any>>(obj: T): Record<string, any> {
+  const result: Record<string, any> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (value === undefined) {
+      continue;
+    }
+    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+      result[key] = sanitizeFirestoreData(value);
+    } else {
+      result[key] = value;
+    }
+  }
+  return result;
+}
 
 const CATEGORIAS_PADRAO: Omit<Categoria, 'id'>[] = [
   { nome: 'Alimentação & Mercado', tipo: 'despesa', cor: '#f59e0b', icone: 'UtensilsCrossed', orcamentoMensal: 1500, descricao: 'Supermercado, restaurantes e delivery' },
@@ -105,6 +124,24 @@ export async function inicializarUsuarioSeNovo(user: User): Promise<void> {
         };
         batch.set(catRef, novaCat);
       });
+
+      // Seed initial credit card
+      const cartao1Id = `card_${Date.now()}_1`;
+      const cartao1Ref = doc(db, 'users', user.uid, 'cartoes', cartao1Id);
+      const cartao1: CartaoCredito & { userId: string } = {
+        id: cartao1Id,
+        userId: user.uid,
+        nome: 'Cartão de Crédito Principal',
+        bandeira: 'mastercard',
+        limiteTotal: 5000,
+        limiteDisponivel: 5000,
+        diaFechamento: 25,
+        diaVencimento: 5,
+        cor: '#8b5cf6',
+        ultimosDigitos: '1234',
+        ativo: true,
+      };
+      batch.set(cartao1Ref, cartao1);
 
       await batch.commit();
     }
@@ -202,11 +239,12 @@ export async function salvarLancamento(userId: string, lancamento: Lancamento): 
   const path = `users/${userId}/lancamentos/${lancamento.id}`;
   try {
     const docRef = doc(db, 'users', userId, 'lancamentos', lancamento.id);
-    const dataWithUser = {
+    const dataWithUser = sanitizeFirestoreData({
       ...lancamento,
       userId,
+      dataPagamento: lancamento.status === 'pago' ? (lancamento.dataPagamento || new Date().toISOString().split('T')[0]) : null,
       atualizadoEm: new Date().toISOString(),
-    };
+    });
     await setDoc(docRef, dataWithUser, { merge: true });
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
@@ -360,7 +398,7 @@ export function calcularResumoFinanceiro(
     .reduce((acc, l) => acc + (Number(l.valor) || 0), 0);
 
   const despesasMes = lancamentosMes
-    .filter(l => l.tipo === 'despesa' && l.status === 'pago')
+    .filter(l => l.tipo === 'despesa' && l.status === 'pago' && !isItemInformativoFatura(l, lancamentosMes))
     .reduce((acc, l) => acc + (Number(l.valor) || 0), 0);
 
   const saldoPrevistoMes = saldoTotalConsolidado + (receitasMes - despesasMes);
@@ -374,9 +412,16 @@ export function calcularResumoFinanceiro(
 
   // Expenses grouped by category
   const mapCategorias: Record<string, number> = {};
+  const hasDetailedCardItems = lancamentosMes.some(
+    other => other.cartaoId && !other.tags?.includes('fatura') && !other.descricao.toLowerCase().startsWith('fatura ')
+  );
+
   lancamentosMes
     .filter(l => l.tipo === 'despesa')
     .forEach(l => {
+      const isFaturaConsolidada = l.tags?.includes('fatura') || l.descricao.toLowerCase().startsWith('fatura ');
+      if (isFaturaConsolidada && hasDetailedCardItems) return;
+
       mapCategorias[l.categoriaId] = (mapCategorias[l.categoriaId] || 0) + Number(l.valor || 0);
     });
 
@@ -408,7 +453,7 @@ export function calcularResumoFinanceiro(
     });
 
     const rec = lDoMes.filter(l => l.tipo === 'receita').reduce((a, b) => a + Number(b.valor || 0), 0);
-    const desp = lDoMes.filter(l => l.tipo === 'despesa').reduce((a, b) => a + Number(b.valor || 0), 0);
+    const desp = lDoMes.filter(l => l.tipo === 'despesa' && !isItemInformativoFatura(l, lDoMes)).reduce((a, b) => a + Number(b.valor || 0), 0);
 
     fluxoMensal.push({
       mes: nomeMes.toUpperCase().replace('.', ''),

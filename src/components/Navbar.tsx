@@ -17,7 +17,8 @@ import {
   LogOut,
   User as UserIcon,
   ChevronDown,
-  Smartphone
+  Smartphone,
+  Tags
 } from 'lucide-react';
 import { formatarMoeda } from '../utils/format';
 import { useAuth } from '../context/AuthContext';
@@ -27,6 +28,7 @@ interface NavbarProps {
   setCurrentTab: (tab: string) => void;
   onOpenNovoLancamento: () => void;
   onOpenSqlModal: () => void;
+  onOpenCategoriasModal?: () => void;
   saldoConsolidado?: number;
 }
 
@@ -35,6 +37,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   setCurrentTab,
   onOpenNovoLancamento,
   onOpenSqlModal,
+  onOpenCategoriasModal,
   saldoConsolidado = 0,
 }) => {
   const { user, logout } = useAuth();
@@ -103,6 +106,18 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* Action Buttons & User Menu */}
           <div className="flex items-center gap-2">
+            {onOpenCategoriasModal && (
+              <button
+                id="btn-gerenciar-categorias-navbar"
+                onClick={onOpenCategoriasModal}
+                title="Gerenciar Categorias (Criar, Editar, Renomear, Excluir e Mesclar)"
+                className="p-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 transition-colors flex items-center gap-1.5 text-xs font-medium cursor-pointer"
+              >
+                <Tags className="w-4 h-4 text-indigo-400" />
+                <span className="hidden sm:inline">Categorias</span>
+              </button>
+            )}
+
             <button
               id="btn-sql-schema"
               onClick={onOpenSqlModal}
@@ -162,6 +177,16 @@ export const Navbar: React.FC<NavbarProps> = ({
                         Banco Individual Isolado
                       </span>
                     </div>
+
+                    {onOpenCategoriasModal && (
+                      <button
+                        onClick={onOpenCategoriasModal}
+                        className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs text-slate-200 hover:bg-slate-800 transition-colors font-medium cursor-pointer mb-1"
+                      >
+                        <Tags className="w-4 h-4 text-indigo-400" />
+                        <span>Gerenciar Categorias</span>
+                      </button>
+                    )}
 
                     <button
                       onClick={() => logout()}

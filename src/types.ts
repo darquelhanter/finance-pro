@@ -85,6 +85,11 @@ export interface Lancamento {
   tipo: TipoLancamento;
   descricao: string;
   valor: number;
+  valorOriginal?: number;
+  valorPago?: number;
+  juros?: number;
+  multa?: number;
+  desconto?: number;
   categoriaId: string;
   contaId?: string;
   cartaoId?: string;
@@ -96,10 +101,23 @@ export interface Lancamento {
   status: StatusLancamento;
   observacoes?: string;
   tags?: string[];
+  apenasVisualizacao?: boolean; // Se true, é item informativo de fatura/extrato e não duplica despesa financeira da fatura
   parcela?: ParcelaInfo;
   recorrencia?: RecorrenciaConfig;
   criadoEm: string;
   atualizadoEm: string;
+}
+
+export interface DadosPagamento {
+  lancamentoId: string;
+  dataPagamento: string;
+  contaId?: string;
+  valorOriginal: number;
+  valorPago: number;
+  juros?: number;
+  multa?: number;
+  desconto?: number;
+  observacoes?: string;
 }
 
 export interface AuditLog {
@@ -125,6 +143,7 @@ export interface ImportacaoFaturaItem {
 }
 
 export interface ExtracaoFaturaResponse {
+  tipoDocumento?: 'fatura_cartao' | 'boleto_cobranca' | 'comprovante_pix' | string;
   emissor?: string;
   titular?: string;
   mesReferencia?: string;

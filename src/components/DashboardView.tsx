@@ -305,6 +305,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                           <Clock className="w-3 h-3 text-slate-500" />
                           Vence em: {lanc.dataVencimento ? lanc.dataVencimento.split('-').reverse().join('/') : '-'}
                         </span>
+                        {lanc.dataVencimento && lanc.dataVencimento < new Date().toISOString().split('T')[0] && (
+                          <span className="px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 font-semibold text-[10px] border border-rose-500/30 flex items-center gap-0.5">
+                            <AlertCircle className="w-2.5 h-2.5" />
+                            Vencida (Atraso)
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>

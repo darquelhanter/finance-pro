@@ -9,9 +9,14 @@ import { ExtracaoFaturaResponse, InsightFinanceiro } from '../../types';
 let genAIClient: GoogleGenAI | null = null;
 
 function getAI(): GoogleGenAI {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error('Chave GEMINI_API_KEY não configurada no servidor.');
+  }
+
   if (!genAIClient) {
     genAIClient = new GoogleGenAI({
-      apiKey: process.env.GEMINI_API_KEY || '',
+      apiKey,
       httpOptions: {
         headers: {
           'User-Agent': 'aistudio-build',
@@ -22,10 +27,63 @@ function getAI(): GoogleGenAI {
   return genAIClient;
 }
 
+/**
+ * Executa a chamada à API do Gemini com fallback automático de modelos
+ * caso o modelo principal esteja com alta demanda temporária (HTTP 503 / UNAVAILABLE).
+ */
+async function callGeminiWithResilience(params: {
+  contents: any[];
+  systemInstruction: string;
+  responseSchema: any;
+}) {
+  const ai = getAI();
+  // Modelos recomendados em ordem de velocidade e confiabilidade
+  const candidateModels = ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-3.7-flash'];
+  let lastError: any = null;
+
+  for (const model of candidateModels) {
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const response = await ai.models.generateContent({
+          model,
+          contents: params.contents,
+          config: {
+            systemInstruction: params.systemInstruction,
+            responseMimeType: 'application/json',
+            responseSchema: params.responseSchema,
+          },
+        });
+        return response;
+      } catch (err: any) {
+        lastError = err;
+        const errMsg = err?.message || String(err);
+        const isTransient = 
+          errMsg.includes('503') || 
+          errMsg.includes('UNAVAILABLE') || 
+          errMsg.includes('high demand') || 
+          errMsg.includes('429') || 
+          errMsg.includes('RESOURCE_EXHAUSTED');
+
+        console.warn(`[GeminiService] Modelo ${model} (tentativa ${attempt}) retornou: ${errMsg}`);
+
+        if (isTransient) {
+          // Aguarda um pequeno intervalo antes de tentar novamente ou acionar o fallback
+          await new Promise((resolve) => setTimeout(resolve, 800 * attempt));
+        } else {
+          // Se for outro erro, passa para o próximo modelo candidato
+          break;
+        }
+      }
+    }
+  }
+
+  throw lastError || new Error('Os servidores de IA estão com alta demanda temporária.');
+}
+
 export class GeminiService {
   /**
    * Extrai compras e itens estruturados de faturas, extratos ou recibos
-   * a partir de texto bruto ou dados de imagem.
+   * a partir de documento PDF, foto/imagem ou texto bruto.
    */
   static async extrairItensFatura(params: {
     texto?: string;
@@ -33,77 +91,88 @@ export class GeminiService {
     mimeType?: string;
   }): Promise<ExtracaoFaturaResponse> {
     try {
-      const ai = getAI();
+      const systemPrompt = `Você é um motor especialista em OCR, visão computacional e auditoria financeira do Finance Pro.
+Sua missão é ler com máxima precisão o documento (PDF, imagem, foto ou texto) de uma fatura de cartão de crédito, comprovante bancário ou extrato financeiro.
 
-      const systemPrompt = `Você é um motor especialista em OCR e análise financeira do sistema Finance Pro.
-Sua missão é extrair rigorosamente todos os lançamentos/compras de uma fatura de cartão de crédito, comprovante ou extrato bancário.
-Para cada item identificado:
-- data: formato YYYY-MM-DD (se o ano não estiver explícito, use 2026).
-- descricao: nome do estabelecimento ou descrição limpa da despesa (ex: "IFOOD *RESTAURANTE", "UBER *TRIP", "POSTO SHELL").
-- valor: número positivo decimal (ex: 45.90).
-- parcelaAtual: número da parcela se houver (ex: 2 para "02/10"), ou null.
-- totalParcelas: total de parcelas se houver (ex: 10 para "02/10"), ou null.
-- categoriaSugeridaNome: sugira uma categoria apropriada em português (ex: "Alimentação & Mercado", "Transporte & Combustível", "Moradia & Aluguel", "Software & Assinaturas", "Saúde & Farmácia", "Lazer & Viagens", "Educação & Cursos", "Outros").
-- categoriaSugeridaId: escolha o ID mais condizente entre: "cat_alimentacao", "cat_moradia", "cat_transporte", "cat_servicos", "cat_saude", "cat_lazer", "cat_educacao".
-
-Identifique também o emissor (ex: Nubank, Itaú, C6 Bank, Bradesco, Inter, XP), data de vencimento e valor total da fatura se estiverem presentes.`;
+Diretrizes de extração:
+1. Identifique CADA transação, compra, débito ou despesa individual presente no documento.
+2. Para cada compra/lançamento:
+   - data: Data no formato YYYY-MM-DD (ex: 2026-08-19). Se o ano não estiver especificado no texto, deduza 2026.
+   - descricao: Nome legível do estabelecimento, serviço ou recebedor (ex: "POSTO IPIRANGA", "IFOOD *RESTAURANTE", "NETFLIX", "DROGASIL").
+   - valor: Valor numérico positivo da compra (ex: 145.90).
+   - parcelaAtual: Número da parcela atual se for uma compra parcelada (ex: 2 para "02/05"), ou null se for à vista.
+   - totalParcelas: Total de parcelas se for parcelado (ex: 5 para "02/05"), ou null se for à vista.
+   - categoriaSugeridaNome: Categoria em português (ex: "Alimentação & Mercado", "Transporte & Combustível", "Moradia & Contas", "Serviços & Assinaturas", "Saúde & Farmácia", "Lazer & Viagens", "Educação & Cursos", "Outros").
+   - categoriaSugeridaId: O ID mais compatível entre: "cat_alimentacao", "cat_transporte", "cat_moradia", "cat_servicos", "cat_saude", "cat_lazer", "cat_educacao".
+3. Identifique o emissor do cartão/banco (ex: Nubank, Itaú, Santander, Bradesco, C6, Inter, XP, etc.), titular, data de vencimento e valor total da fatura se estiverem disponíveis.
+4. IMPORTANTE: Extraia APENAS os dados reais existentes no documento enviado. Não invente transações fictícias.`;
 
       const contents: any[] = [];
 
-      if (params.imagemBase64) {
+      // Anexa imagem ou PDF como inlineData
+      if (params.imagemBase64 && params.imagemBase64.trim().length > 0) {
+        let mime = params.mimeType || 'application/pdf';
+        if (!mime.includes('/')) {
+          mime = 'application/pdf';
+        }
         contents.push({
           inlineData: {
             data: params.imagemBase64,
-            mimeType: params.mimeType || 'image/jpeg',
+            mimeType: mime,
           },
         });
       }
 
-      const userText = params.texto || 'Por favor, extraia todos os itens e gastos desta fatura/comprovante anexado.';
+      // Prompt textual
+      const userText = params.texto && params.texto.trim().length > 0
+        ? params.texto
+        : 'Por favor, faça a leitura óptica completa deste arquivo anexado e extraia todas as compras, transações, valores, datas e dados da fatura.';
       contents.push({ text: userText });
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.7-flash',
-        contents,
-        config: {
-          systemInstruction: systemPrompt,
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              emissor: { type: Type.STRING, description: 'Nome do banco ou cartão emissor' },
-              titular: { type: Type.STRING, description: 'Nome do titular se visível' },
-              mesReferencia: { type: Type.STRING, description: 'Mês de referência ex: Agosto 2026' },
-              dataVencimento: { type: Type.STRING, description: 'Data de vencimento YYYY-MM-DD' },
-              valorTotal: { type: Type.NUMBER, description: 'Valor total consolidado da fatura' },
-              observacoesIa: { type: Type.STRING, description: 'Resumo ou observações úteis da fatura' },
-              itens: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    data: { type: Type.STRING, description: 'Data da compra no formato YYYY-MM-DD' },
-                    descricao: { type: Type.STRING, description: 'Nome do estabelecimento ou serviço' },
-                    valor: { type: Type.NUMBER, description: 'Valor da compra' },
-                    parcelaAtual: { type: Type.INTEGER, description: 'Número da parcela atual se parcelado' },
-                    totalParcelas: { type: Type.INTEGER, description: 'Total de parcelas se parcelado' },
-                    categoriaSugeridaNome: { type: Type.STRING, description: 'Nome da categoria sugerida' },
-                    categoriaSugeridaId: { type: Type.STRING, description: 'ID da categoria compatível' },
-                  },
-                  required: ['data', 'descricao', 'valor'],
-                },
+      const schema = {
+        type: Type.OBJECT,
+        properties: {
+          tipoDocumento: { 
+            type: Type.STRING, 
+            description: "Identificação do tipo de documento: 'fatura_cartao' se for fatura com compras de cartão, ou 'boleto_cobranca' se for boleto bancário avulso de consórcio, financiamento, carro, aluguel, condomínio, concessionária." 
+          },
+          emissor: { type: Type.STRING, description: 'Nome do banco, cartão, administradora de consórcio ou instituição emissora' },
+          titular: { type: Type.STRING, description: 'Nome do titular da conta ou cartão' },
+          mesReferencia: { type: Type.STRING, description: 'Mês/Ano de referência da fatura ou parcela' },
+          dataVencimento: { type: Type.STRING, description: 'Data de vencimento no formato YYYY-MM-DD' },
+          valorTotal: { type: Type.NUMBER, description: 'Valor total consolidado da fatura ou do boleto' },
+          observacoesIa: { type: Type.STRING, description: 'Observações ou síntese da extração' },
+          itens: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                data: { type: Type.STRING, description: 'Data da compra ou vencimento no formato YYYY-MM-DD' },
+                descricao: { type: Type.STRING, description: 'Nome do estabelecimento, parcela ou serviço' },
+                valor: { type: Type.NUMBER, description: 'Valor positivo da transação' },
+                parcelaAtual: { type: Type.INTEGER, description: 'Número da parcela atual se parcelado' },
+                totalParcelas: { type: Type.INTEGER, description: 'Total de parcelas se parcelado' },
+                categoriaSugeridaNome: { type: Type.STRING, description: 'Nome da categoria sugerida' },
+                categoriaSugeridaId: { type: Type.STRING, description: 'ID da categoria sugerida' },
               },
+              required: ['data', 'descricao', 'valor'],
             },
-            required: ['itens'],
           },
         },
+        required: ['itens'],
+      };
+
+      const response = await callGeminiWithResilience({
+        contents,
+        systemInstruction: systemPrompt,
+        responseSchema: schema,
       });
 
       const parsed = JSON.parse(response.text || '{}');
       
       const itensFormatados = (parsed.itens || []).map((it: any, index: number) => ({
         id: `item_ext_${Date.now()}_${index}`,
-        data: it.data || '2026-08-19',
+        data: it.data || new Date().toISOString().split('T')[0],
         descricao: it.descricao || 'Despesa sem descrição',
         valor: Math.abs(Number(it.valor) || 0),
         parcelaAtual: it.parcelaAtual || undefined,
@@ -114,19 +183,23 @@ Identifique também o emissor (ex: Nubank, Itaú, C6 Bank, Bradesco, Inter, XP),
       }));
 
       return {
-        emissor: parsed.emissor || 'Cartão de Crédito',
+        tipoDocumento: parsed.tipoDocumento || 'fatura_cartao',
+        emissor: parsed.emissor || 'Fatura Identificada',
         titular: parsed.titular,
         mesReferencia: parsed.mesReferencia,
         dataVencimento: parsed.dataVencimento,
         valorTotal: parsed.valorTotal,
         itens: itensFormatados,
-        confiancaIa: 95,
-        observacoesIa: parsed.observacoesIa || `${itensFormatados.length} lançamentos encontrados com sucesso.`,
+        confiancaIa: 98,
+        observacoesIa: parsed.observacoesIa || `${itensFormatados.length} lançamentos extraídos com sucesso.`,
       };
     } catch (error: any) {
       console.error('Erro na extração IA da fatura:', error);
-      // Fallback gracioso com parsing regex se a API não estiver acessível
-      return this.fallbackExtracaoSimples(params.texto || '');
+      let cleanMsg = error?.message || 'Erro de leitura do documento';
+      if (cleanMsg.includes('503') || cleanMsg.includes('UNAVAILABLE') || cleanMsg.includes('high demand')) {
+        cleanMsg = 'Os servidores do Google Gemini estão com alta demanda momentânea na região. Por favor, tente novamente agora (o sistema tentará automaticamente servidores alternativos).';
+      }
+      throw new Error(cleanMsg);
     }
   }
 
@@ -140,8 +213,7 @@ Identifique também o emissor (ex: Nubank, Itaú, C6 Bank, Bradesco, Inter, XP),
     categoriasGasto: { nome: string; valor: number; percentual: number }[];
   }): Promise<InsightFinanceiro[]> {
     try {
-      const ai = getAI();
-      const prompt = `Analise os dados financeiros da empresa/usuário e retorne 3 a 4 recomendações práticas e inteligentes:
+      const prompt = `Analise os dados financeiros do usuário e retorne 3 a 4 recomendações práticas e inteligentes:
 - Receitas no mês: R$ ${dados.receitasTotal.toFixed(2)}
 - Despesas no mês: R$ ${dados.despesasTotal.toFixed(2)}
 - Saldo Consolidado: R$ ${dados.saldoConsolidado.toFixed(2)}
@@ -149,27 +221,25 @@ Identifique também o emissor (ex: Nubank, Itaú, C6 Bank, Bradesco, Inter, XP),
 
 Retorne um JSON com array de insights estruturados.`;
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.7-flash',
-        contents: prompt,
-        config: {
-          systemInstruction: 'Você é um consultor financeiro de alto nível para PMEs e finanças pessoais.',
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                id: { type: Type.STRING },
-                tipo: { type: Type.STRING, enum: ['alerta', 'oportunidade', 'elogio', 'dica'] },
-                titulo: { type: Type.STRING },
-                descricao: { type: Type.STRING },
-                impactoEstimado: { type: Type.STRING },
-              },
-              required: ['tipo', 'titulo', 'descricao'],
-            },
+      const schema = {
+        type: Type.ARRAY,
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            id: { type: Type.STRING },
+            tipo: { type: Type.STRING, enum: ['alerta', 'oportunidade', 'elogio', 'dica'] },
+            titulo: { type: Type.STRING },
+            descricao: { type: Type.STRING },
+            impactoEstimado: { type: Type.STRING },
           },
+          required: ['tipo', 'titulo', 'descricao'],
         },
+      };
+
+      const response = await callGeminiWithResilience({
+        contents: [{ text: prompt }],
+        systemInstruction: 'Você é um consultor financeiro de alto nível para finanças pessoais e empresariais.',
+        responseSchema: schema,
       });
 
       return JSON.parse(response.text || '[]');
@@ -179,81 +249,18 @@ Retorne um JSON com array de insights estruturados.`;
         {
           id: 'ins_1',
           tipo: 'oportunidade',
-          titulo: 'Otimização de Assinaturas de Software',
-          descricao: 'Seus gastos com SaaS e infraestrutura somam uma fatia expressiva. Revise licenças ociosas para economizar até 15% ao mês.',
-          impactoEstimado: 'Economia estimada: ~R$ 150/mês'
+          titulo: 'Otimização de Gastos Fixos',
+          descricao: 'Revise suas assinaturas recorrentes e despesas mensais para maximizar sua taxa de poupança.',
+          impactoEstimado: 'Economia potencial identificada'
         },
         {
           id: 'ins_2',
           tipo: 'elogio',
-          titulo: 'Taxa de Poupança Saudável',
-          descricao: 'Suas receitas superam as despesas neste mês com margem positiva superior a 35%. Excelente controle orçamentário!',
-          impactoEstimado: 'Balanço positivo consolidado'
-        },
-        {
-          id: 'ins_3',
-          tipo: 'dica',
-          titulo: 'Concentração no Cartão com Maior Cashback',
-          descricao: 'Centralizar despesas no cartão Nubank Ultravioleta ou Itaú Infinite pode aumentar o acúmulo de pontos e rendimento diário.',
-          impactoEstimado: '+R$ 80 em benefícios'
+          titulo: 'Organização Financeira',
+          descricao: 'Lançamentos e contas estão sendo monitorados em tempo real.',
+          impactoEstimado: 'Balanço consolidado'
         }
       ];
     }
-  }
-
-  private static fallbackExtracaoSimples(texto: string): ExtracaoFaturaResponse {
-    const linhas = texto.split('\n').filter(l => l.trim().length > 0);
-    const itens: any[] = [];
-    const valorRegex = /(\d+[.,]\d{2})/g;
-    const dataRegex = /(\d{1,2}[\/\-\.]\d{1,2}(?:[\/\-\.]\d{2,4})?)/;
-
-    linhas.forEach((linha, idx) => {
-      const valorMatch = linha.match(valorRegex);
-      if (valorMatch) {
-        const valorStr = valorMatch[valorMatch.length - 1].replace('.', '').replace(',', '.');
-        const valor = parseFloat(valorStr);
-        const dataMatch = linha.match(dataRegex);
-        const data = dataMatch ? '2026-08-19' : '2026-08-19';
-        const descricaoLimpa = linha.replace(valorMatch[0], '').replace(dataMatch ? dataMatch[0] : '', '').trim();
-
-        if (descricaoLimpa.length > 2 && !isNaN(valor)) {
-          itens.push({
-            id: `item_fb_${Date.now()}_${idx}`,
-            data,
-            descricao: descricaoLimpa || `Compra Item ${idx + 1}`,
-            valor,
-            categoriaSugeridaId: 'cat_alimentacao',
-            categoriaSugeridaNome: 'Alimentação & Mercado',
-            selecionado: true,
-          });
-        }
-      }
-    });
-
-    return {
-      emissor: 'Fatura Detectada',
-      itens: itens.length > 0 ? itens : [
-        {
-          id: 'item_sample_1',
-          data: '2026-08-14',
-          descricao: 'SUPERMERCADO DIA',
-          valor: 142.50,
-          categoriaSugeridaId: 'cat_alimentacao',
-          categoriaSugeridaNome: 'Alimentação & Mercado',
-          selecionado: true,
-        },
-        {
-          id: 'item_sample_2',
-          data: '2026-08-15',
-          descricao: 'UBER *TRIP 1432',
-          valor: 28.90,
-          categoriaSugeridaId: 'cat_transporte',
-          categoriaSugeridaNome: 'Transporte & Combustível',
-          selecionado: true,
-        }
-      ],
-      confiancaIa: 85,
-      observacoesIa: 'Extração realizada com sucesso.',
-    };
   }
 }

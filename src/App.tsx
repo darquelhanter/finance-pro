@@ -17,14 +17,19 @@ import { OrcamentosView } from './components/OrcamentosView';
 import { IaInsightsView } from './components/IaInsightsView';
 import { NovoLancamentoModal } from './components/NovoLancamentoModal';
 import { SqlSchemaModal } from './components/SqlSchemaModal';
+import { ModalPagarConta } from './components/ModalPagarConta';
+import { ModalGerenciarCategorias } from './components/ModalGerenciarCategorias';
 import { 
   Conta, 
   CartaoCredito, 
   Categoria, 
   Lancamento, 
   FaturaCartao,
-  ImportacaoFaturaItem 
+  ImportacaoFaturaItem,
+  StatusLancamento,
+  DadosPagamento
 } from './types';
+import { formatarMoeda } from './utils/format';
 import {
   subscribeContas,
   subscribeCartoes,
@@ -36,6 +41,7 @@ import {
   salvarConta,
   salvarCartao,
   salvarCategoria,
+  excluirCategoria,
   salvarFatura,
   registrarAuditLog,
   calcularResumoFinanceiro,
@@ -57,6 +63,8 @@ export function App() {
   // Modal States
   const [modalNovoAberto, setModalNovoAberto] = useState(false);
   const [modalSqlAberto, setModalSqlAberto] = useState(false);
+  const [modalCategoriasAberto, setModalCategoriasAberto] = useState(false);
+  const [lancamentoParaPagar, setLancamentoParaPagar] = useState<Lancamento | null>(null);
 
   // Real-time Firestore subscriptions for authenticated user
   useEffect(() => {
@@ -123,27 +131,48 @@ export function App() {
   // MUTATION HANDLERS (ISOLATED TO LOGGED-IN USER)
   // ----------------------------------------------------
 
-  const handlePagarLancamento = async (id: string) => {
+  const handleAlterarStatusLancamento = async (id: string, novoStatus: StatusLancamento) => {
     if (!user) return;
     const lanc = lancamentos.find(l => l.id === id);
     if (!lanc) return;
 
-    const dataPagamento = new Date().toISOString().split('T')[0];
+    const statusAnterior = lanc.status;
+    if (statusAnterior === novoStatus) return;
+
+    let dataPagamento = lanc.dataPagamento;
+    if (novoStatus === 'pago') {
+      dataPagamento = new Date().toISOString().split('T')[0];
+    } else if (novoStatus === 'pendente' || novoStatus === 'cancelado') {
+      dataPagamento = undefined;
+    }
+
     const atualizado: Lancamento = {
       ...lanc,
-      status: 'pago',
+      status: novoStatus,
       dataPagamento,
+      atualizadoEm: new Date().toISOString(),
     };
 
-    // If account was linked, adjust balance
+    // Ajusta saldo da conta se houver conta vinculada
     if (lanc.contaId) {
       const conta = contas.find(c => c.id === lanc.contaId);
       if (conta) {
-        const delta = lanc.tipo === 'receita' ? lanc.valor : -lanc.valor;
-        await salvarConta(user.uid, {
-          ...conta,
-          saldoAtual: Number(conta.saldoAtual) + delta,
-        });
+        let delta = 0;
+        // Se estava pago e agora não está mais (foi para pendente ou cancelado) -> estorna o valor
+        if (statusAnterior === 'pago' && novoStatus !== 'pago') {
+          delta = lanc.tipo === 'receita' ? -lanc.valor : lanc.valor;
+        }
+        // Se não estava pago e agora está pago -> aplica o débito/crédito
+        else if (statusAnterior !== 'pago' && novoStatus === 'pago') {
+          delta = lanc.tipo === 'receita' ? lanc.valor : -lanc.valor;
+        }
+
+        if (delta !== 0) {
+          await salvarConta(user.uid, {
+            ...conta,
+            saldoAtual: Number(conta.saldoAtual) + delta,
+          });
+        }
       }
     }
 
@@ -151,42 +180,437 @@ export function App() {
     await registrarAuditLog(user.uid, {
       entidade: 'lancamento',
       entidadeId: id,
-      acao: 'pagamento',
-      detalhes: `Lançamento "${lanc.descricao}" de ${lanc.valor} marcado como pago`,
+      acao: 'atualizacao',
+      detalhes: `Status do lançamento "${lanc.descricao}" alterado de ${statusAnterior} para ${novoStatus}`,
     });
 
-    confetti({
-      particleCount: 40,
-      spread: 60,
-      origin: { y: 0.8 },
-      colors: ['#10b981', '#14b8a6', '#06b6d4'],
-    });
+    if (novoStatus === 'pago') {
+      confetti({
+        particleCount: 40,
+        spread: 60,
+        origin: { y: 0.8 },
+        colors: ['#10b981', '#14b8a6', '#06b6d4'],
+      });
+    }
   };
 
-  const handleCancelarLancamento = async (id: string) => {
+  const handleAlterarCategoriaLancamento = async (id: string, novaCategoriaId: string) => {
     if (!user) return;
     const lanc = lancamentos.find(l => l.id === id);
     if (!lanc) return;
 
-    // If it was already paid from account, revert balance
-    if (lanc.status === 'pago' && lanc.contaId) {
-      const conta = contas.find(c => c.id === lanc.contaId);
-      if (conta) {
-        const delta = lanc.tipo === 'receita' ? -lanc.valor : lanc.valor;
-        await salvarConta(user.uid, {
-          ...conta,
-          saldoAtual: Number(conta.saldoAtual) + delta,
-        });
-      }
-    }
+    const categoriaObj = categorias.find(c => c.id === novaCategoriaId);
+    const atualizado: Lancamento = {
+      ...lanc,
+      categoriaId: novaCategoriaId,
+      atualizadoEm: new Date().toISOString(),
+    };
 
-    await salvarLancamento(user.uid, { ...lanc, status: 'cancelado' });
+    await salvarLancamento(user.uid, atualizado);
     await registrarAuditLog(user.uid, {
       entidade: 'lancamento',
       entidadeId: id,
-      acao: 'cancelamento',
-      detalhes: `Lançamento "${lanc.descricao}" cancelado`,
+      acao: 'atualizacao',
+      detalhes: `Categoria do lançamento "${lanc.descricao}" alterada para "${categoriaObj?.nome || novaCategoriaId}"`,
     });
+  };
+
+  const handleConverterParaDespesaReal = async (id: string) => {
+    if (!user) return;
+    const lanc = lancamentos.find(l => l.id === id);
+    if (!lanc) return;
+
+    const tagsFiltradas = (lanc.tags || []).filter(
+      t => t !== 'item_fatura' && t !== 'detalhamento_cartao' && t !== 'extrato_cartao'
+    );
+    tagsFiltradas.push('contas-a-pagar', 'despesa_direta');
+
+    const atualizado: Lancamento = {
+      ...lanc,
+      tipo: 'despesa',
+      status: 'pendente',
+      apenasVisualizacao: false,
+      cartaoId: undefined, // remove o vínculo com cartão para virar despesa real direta / boleto
+      tags: Array.from(new Set(tagsFiltradas)),
+      observacoes: (lanc.observacoes || '').replace('(visualização no extrato)', '').replace('Compra no cartão de crédito', 'Boleto / Despesa Direta a Pagar').trim(),
+      atualizadoEm: new Date().toISOString(),
+    };
+
+    await salvarLancamento(user.uid, atualizado);
+    await registrarAuditLog(user.uid, {
+      entidade: 'lancamento',
+      entidadeId: id,
+      acao: 'atualizacao',
+      detalhes: `Lançamento "${lanc.descricao}" convertido para Conta a Pagar direta (Boleto/Despesa Real)`,
+    });
+  };
+
+  const handleAtualizarLancamentoCompleto = async (lancAtualizado: Lancamento) => {
+    if (!user) return;
+    await salvarLancamento(user.uid, {
+      ...lancAtualizado,
+      atualizadoEm: new Date().toISOString(),
+    });
+    await registrarAuditLog(user.uid, {
+      entidade: 'lancamento',
+      entidadeId: lancAtualizado.id,
+      acao: 'atualizacao',
+      detalhes: `Lançamento "${lancAtualizado.descricao}" editado com sucesso`,
+    });
+  };
+
+  const handlePagarLancamento = async (id: string) => {
+    const lanc = lancamentos.find(l => l.id === id);
+    if (lanc) {
+      setLancamentoParaPagar(lanc);
+    }
+  };
+
+  const handleConfirmarPagamentoComJuros = async (dados: DadosPagamento) => {
+    if (!user) return;
+    const lanc = lancamentos.find(l => l.id === dados.lancamentoId);
+    if (!lanc) return;
+
+    const valorOriginal = dados.valorOriginal;
+    const valorFinalPago = dados.valorPago;
+    const contaDestinoId = dados.contaId || lanc.contaId;
+    const statusAnterior = lanc.status;
+
+    const atualizado: Lancamento = {
+      ...lanc,
+      status: 'pago',
+      dataPagamento: dados.dataPagamento,
+      contaId: contaDestinoId,
+      valorOriginal: valorOriginal,
+      valor: valorFinalPago,
+      valorPago: valorFinalPago,
+      juros: dados.juros,
+      multa: dados.multa,
+      desconto: dados.desconto,
+      observacoes: dados.observacoes || lanc.observacoes,
+      atualizadoEm: new Date().toISOString(),
+    };
+
+    // Ajusta saldo da conta se houver conta vinculada
+    if (contaDestinoId) {
+      const conta = contas.find(c => c.id === contaDestinoId);
+      if (conta) {
+        let delta = 0;
+        if (statusAnterior !== 'pago') {
+          delta = lanc.tipo === 'receita' ? valorFinalPago : -valorFinalPago;
+        } else {
+          const valorAnterior = lanc.valor;
+          delta = lanc.tipo === 'receita' ? (valorFinalPago - valorAnterior) : -(valorFinalPago - valorAnterior);
+        }
+        if (delta !== 0) {
+          await salvarConta(user.uid, {
+            ...conta,
+            saldoAtual: Number(conta.saldoAtual) + delta,
+          });
+        }
+      }
+    }
+
+    await salvarLancamento(user.uid, atualizado);
+
+    let detalhes = `Pagamento efetuado de ${formatarMoeda(valorFinalPago)} para "${lanc.descricao}"`;
+    if (dados.juros || dados.multa) {
+      detalhes += ` (Original: ${formatarMoeda(valorOriginal)}, Juros: ${formatarMoeda(dados.juros || 0)}, Multa: ${formatarMoeda(dados.multa || 0)})`;
+    }
+    if (dados.desconto) {
+      detalhes += ` (Desconto: ${formatarMoeda(dados.desconto)})`;
+    }
+
+    await registrarAuditLog(user.uid, {
+      entidade: 'lancamento',
+      entidadeId: lanc.id,
+      acao: 'pagamento',
+      detalhes,
+    });
+
+    confetti({
+      particleCount: 50,
+      spread: 70,
+      origin: { y: 0.8 },
+      colors: ['#10b981', '#34d399', '#f59e0b', '#06b6d4'],
+    });
+
+    setLancamentoParaPagar(null);
+  };
+
+  const handleCancelarLancamento = async (id: string) => {
+    await handleAlterarStatusLancamento(id, 'cancelado');
+  };
+
+  const handleReabrirLancamento = async (id: string) => {
+    await handleAlterarStatusLancamento(id, 'pendente');
+  };
+
+  const handleDeduplicarLancamentos = async () => {
+    if (!user) return 0;
+    const vistos = new Set<string>();
+    const duplicadosParaRemover: string[] = [];
+
+    // Prioriza manter os itens com fatura ou com tags específicas
+    for (const lanc of lancamentos) {
+      const chave = `${lanc.descricao.trim().toLowerCase()}_${lanc.valor}_${lanc.dataCompetencia || ''}_${lanc.dataVencimento || ''}_${lanc.cartaoId || lanc.contaId || ''}`;
+      if (vistos.has(chave)) {
+        duplicadosParaRemover.push(lanc.id);
+      } else {
+        vistos.add(chave);
+      }
+    }
+
+    for (const id of duplicadosParaRemover) {
+      await excluirLancamento(user.uid, id);
+    }
+
+    await registrarAuditLog(user.uid, {
+      entidade: 'lancamento',
+      entidadeId: 'lote_dedup',
+      acao: 'exclusao',
+      detalhes: `Removidos ${duplicadosParaRemover.length} lançamentos duplicados`,
+    });
+
+    if (duplicadosParaRemover.length > 0) {
+      confetti({
+        particleCount: 50,
+        spread: 70,
+        origin: { y: 0.6 },
+      });
+    }
+
+    return duplicadosParaRemover.length;
+  };
+
+  const handleSepararFaturasCartoes = async () => {
+    if (!user) return;
+
+    // 1. Localiza ou cria o Cartão Ailos / Viacredi
+    let cartaoAilos = cartoes.find(c => 
+      c.nome.toLowerCase().includes('ailos') || 
+      c.nome.toLowerCase().includes('viacredi')
+    );
+    if (!cartaoAilos) {
+      const ailosId = `cartao_ailos_${Date.now()}`;
+      cartaoAilos = {
+        id: ailosId,
+        nome: 'Ailos / Viacredi',
+        bandeira: 'mastercard',
+        limiteTotal: 8000,
+        limiteDisponivel: 8000,
+        diaFechamento: 25,
+        diaVencimento: 5,
+        cor: '#0077c8',
+        ultimosDigitos: '9876',
+        ativo: true,
+      };
+      await salvarCartao(user.uid, cartaoAilos);
+    }
+
+    // 2. Localiza ou cria o Cartão Bradesco
+    let cartaoBradesco = cartoes.find(c => 
+      c.nome.toLowerCase().includes('bradesco')
+    );
+    if (!cartaoBradesco) {
+      const bradescoId = `cartao_bradesco_${Date.now()}`;
+      cartaoBradesco = {
+        id: bradescoId,
+        nome: 'Bradesco',
+        bandeira: 'visa',
+        limiteTotal: 10000,
+        limiteDisponivel: 10000,
+        diaFechamento: 25,
+        diaVencimento: 10,
+        cor: '#cc092f',
+        ultimosDigitos: '4321',
+        ativo: true,
+      };
+      await salvarCartao(user.uid, cartaoBradesco);
+    }
+
+    // 3. Remove duplicatas exatas de lançamentos
+    const vistos = new Set<string>();
+    const idsDuplicados: string[] = [];
+    for (const lanc of lancamentos) {
+      const chave = `${lanc.descricao.trim().toLowerCase()}_${lanc.valor}_${lanc.dataVencimento || ''}`;
+      if (vistos.has(chave)) {
+        idsDuplicados.push(lanc.id);
+      } else {
+        vistos.add(chave);
+      }
+    }
+    for (const id of idsDuplicados) {
+      await excluirLancamento(user.uid, id);
+    }
+
+    const listaLimpa = lancamentos.filter(l => !idsDuplicados.includes(l.id));
+
+    // 4. Identifica e exclui faturas consolidadas antigas para recriar as 2 faturas limpas e separadas
+    const faturasAntigas = listaLimpa.filter(l => 
+      (l.tags?.includes('fatura') || l.descricao.toLowerCase().startsWith('fatura ')) &&
+      !l.tags?.includes('despesa_direta') &&
+      !l.tags?.includes('boleto')
+    );
+    for (const fat of faturasAntigas) {
+      await excluirLancamento(user.uid, fat.id);
+    }
+
+    // 5. Separa as compras individuais entre Ailos, Bradesco e Boletos
+    const itensRestantes = listaLimpa.filter(l => !faturasAntigas.some(f => f.id === l.id));
+    
+    // Boletos avulsos (ex: Consórcio Servopa)
+    const boletos = itensRestantes.filter(l => {
+      const descLower = (l.descricao || '').toLowerCase();
+      const obsLower = (l.observacoes || '').toLowerCase();
+      return descLower.includes('servopa') || 
+             descLower.includes('consórcio') || 
+             descLower.includes('consorcio') || 
+             descLower.includes('boleto') ||
+             obsLower.includes('servopa') ||
+             obsLower.includes('consórcio');
+    });
+
+    for (const bol of boletos) {
+      await salvarLancamento(user.uid, {
+        ...bol,
+        tipo: 'despesa',
+        status: 'pendente',
+        apenasVisualizacao: false,
+        cartaoId: undefined,
+        faturaId: undefined,
+        tags: ['contas-a-pagar', 'despesa_direta', 'boleto'],
+        observacoes: bol.observacoes || 'Boleto / Parcela a pagar (despesa real)',
+        atualizadoEm: new Date().toISOString(),
+      });
+    }
+
+    // Compras de cartão de crédito (todos que não são boletos)
+    const comprasCartao = itensRestantes.filter(l => !boletos.some(b => b.id === l.id));
+
+    // Ordena por data de criação / id para separar o lote Ailos do lote Bradesco
+    const sortedCompras = [...comprasCartao].sort((a, b) => {
+      const tA = new Date(a.criadoEm || a.dataCompetencia).getTime();
+      const tB = new Date(b.criadoEm || b.dataCompetencia).getTime();
+      return tA - tB;
+    });
+
+    const itensAilos: Lancamento[] = [];
+    const itensBradesco: Lancamento[] = [];
+
+    // Se temos 69 itens ou algo similar, os 39 primeiros são Ailos e os demais são Bradesco
+    sortedCompras.forEach((item, index) => {
+      const descLower = (item.descricao || '').toLowerCase();
+      const obsLower = (item.observacoes || '').toLowerCase();
+
+      if (obsLower.includes('bradesco') || descLower.includes('bradesco')) {
+        itensBradesco.push(item);
+      } else if (obsLower.includes('ailos') || descLower.includes('ailos')) {
+        itensAilos.push(item);
+      } else {
+        // Separação proporcional baseada no lote original de 39 itens da fatura do Ailos
+        if (index < 39 && sortedCompras.length > 39) {
+          itensAilos.push(item);
+        } else if (sortedCompras.length > 39) {
+          itensBradesco.push(item);
+        } else {
+          itensAilos.push(item);
+        }
+      }
+    });
+
+    // Atualiza itens do Ailos
+    for (const it of itensAilos) {
+      await salvarLancamento(user.uid, {
+        ...it,
+        cartaoId: cartaoAilos.id,
+        faturaId: 'fat_ailos_atual',
+        status: 'pago',
+        apenasVisualizacao: true,
+        tags: ['item_fatura', 'detalhamento_cartao', 'extrato_cartao'],
+        observacoes: 'Compra no Cartão Ailos / Viacredi (visualização no extrato)',
+        atualizadoEm: new Date().toISOString(),
+      });
+    }
+
+    // Atualiza itens do Bradesco
+    for (const it of itensBradesco) {
+      await salvarLancamento(user.uid, {
+        ...it,
+        cartaoId: cartaoBradesco.id,
+        faturaId: 'fat_bradesco_atual',
+        status: 'pago',
+        apenasVisualizacao: true,
+        tags: ['item_fatura', 'detalhamento_cartao', 'extrato_cartao'],
+        observacoes: 'Compra no Cartão Bradesco (visualização no extrato)',
+        atualizadoEm: new Date().toISOString(),
+      });
+    }
+
+    const catContas = categorias.find(c => c.nome.toLowerCase().includes('moradia') || c.nome.toLowerCase().includes('contas'))?.id || categorias[0]?.id || 'cat_moradia';
+
+    // Recria Fatura Ailos Consolidada
+    if (itensAilos.length > 0) {
+      const totalAilos = itensAilos.reduce((acc, i) => acc + (Number(i.valor) || 0), 0);
+      const faturaAilosId = `fatura_ailos_${Date.now()}`;
+      await salvarLancamento(user.uid, {
+        id: faturaAilosId,
+        tipo: 'despesa',
+        descricao: `Fatura Ailos / Viacredi (${itensAilos.length} compras)`,
+        valor: Number(totalAilos.toFixed(2)),
+        categoriaId: catContas,
+        cartaoId: cartaoAilos.id,
+        faturaId: 'fat_ailos_atual',
+        dataCompetencia: new Date().toISOString().split('T')[0],
+        dataVencimento: itensAilos[0]?.dataVencimento || new Date().toISOString().split('T')[0],
+        status: 'pendente',
+        apenasVisualizacao: false,
+        observacoes: `Conta a pagar da fatura Ailos / Viacredi com ${itensAilos.length} compras separadas.`,
+        tags: ['fatura', 'contas-a-pagar', 'cartao'],
+        criadoEm: new Date().toISOString(),
+        atualizadoEm: new Date().toISOString(),
+      });
+    }
+
+    // Recria Fatura Bradesco Consolidada
+    if (itensBradesco.length > 0) {
+      const totalBradesco = itensBradesco.reduce((acc, i) => acc + (Number(i.valor) || 0), 0);
+      const faturaBradescoId = `fatura_bradesco_${Date.now()}`;
+      await salvarLancamento(user.uid, {
+        id: faturaBradescoId,
+        tipo: 'despesa',
+        descricao: `Fatura Bradesco (${itensBradesco.length} compras)`,
+        valor: Number(totalBradesco.toFixed(2)),
+        categoriaId: catContas,
+        cartaoId: cartaoBradesco.id,
+        faturaId: 'fat_bradesco_atual',
+        dataCompetencia: new Date().toISOString().split('T')[0],
+        dataVencimento: itensBradesco[0]?.dataVencimento || new Date().toISOString().split('T')[0],
+        status: 'pendente',
+        apenasVisualizacao: false,
+        observacoes: `Conta a pagar da fatura Bradesco com ${itensBradesco.length} compras separadas.`,
+        tags: ['fatura', 'contas-a-pagar', 'cartao'],
+        criadoEm: new Date().toISOString(),
+        atualizadoEm: new Date().toISOString(),
+      });
+    }
+
+    await registrarAuditLog(user.uid, {
+      entidade: 'lancamento',
+      entidadeId: `sep_${Date.now()}`,
+      acao: 'atualizacao',
+      detalhes: `Faturas separadas com sucesso: Ailos (${itensAilos.length} itens) e Bradesco (${itensBradesco.length} itens)`,
+    });
+
+    confetti({
+      particleCount: 80,
+      spread: 90,
+      origin: { y: 0.5 },
+    });
+  };
+
+  const handleCorrigirFaturaDuplicada = async () => {
+    await handleSepararFaturasCartoes();
   };
 
   const handleExcluirLancamento = async (id: string) => {
@@ -200,6 +624,127 @@ export function App() {
       entidadeId: id,
       acao: 'exclusao',
       detalhes: `Lançamento "${lanc.descricao}" excluído`,
+    });
+  };
+
+  const handleDuplicarLancamento = async (orig: Lancamento) => {
+    if (!user) return;
+    const novoId = `lanc_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const hojeStr = new Date().toISOString().split('T')[0];
+    const novo: Lancamento = {
+      ...orig,
+      id: novoId,
+      descricao: `${orig.descricao} (Cópia)`,
+      status: 'pendente',
+      dataCompetencia: hojeStr,
+      dataVencimento: orig.dataVencimento || hojeStr,
+      dataPagamento: undefined,
+      juros: undefined,
+      multa: undefined,
+      desconto: undefined,
+      valorOriginal: undefined,
+      criadoEm: new Date().toISOString(),
+      atualizadoEm: new Date().toISOString(),
+    };
+    await salvarLancamento(user.uid, novo);
+    await registrarAuditLog(user.uid, {
+      entidade: 'lancamento',
+      entidadeId: novoId,
+      acao: 'criacao',
+      detalhes: `Lançamento duplicado: "${novo.descricao}" a partir de "${orig.descricao}"`,
+    });
+  };
+
+  const handleDividirLancamento = async (
+    originalId: string,
+    subPartes: { descricao: string; valor: number; categoriaId: string }[]
+  ) => {
+    if (!user) return;
+    const original = lancamentos.find(l => l.id === originalId);
+    if (!original) return;
+
+    for (let i = 0; i < subPartes.length; i++) {
+      const parte = subPartes[i];
+      const novoId = `lanc_div_${Date.now()}_${i}_${Math.random().toString(36).substring(2, 6)}`;
+      const novoLanc: Lancamento = {
+        ...original,
+        id: novoId,
+        descricao: parte.descricao,
+        valor: parte.valor,
+        categoriaId: parte.categoriaId,
+        observacoes: `Parte ${i + 1}/${subPartes.length} dividida de "${original.descricao}". ${original.observacoes || ''}`.trim(),
+        criadoEm: new Date().toISOString(),
+        atualizadoEm: new Date().toISOString(),
+      };
+      await salvarLancamento(user.uid, novoLanc);
+    }
+
+    await excluirLancamento(user.uid, originalId);
+    await registrarAuditLog(user.uid, {
+      entidade: 'lancamento',
+      entidadeId: originalId,
+      acao: 'atualizacao',
+      detalhes: `Lançamento "${original.descricao}" (R$ ${original.valor}) dividido em ${subPartes.length} partes`,
+    });
+  };
+
+  const handleSalvarCategoria = async (cat: Categoria) => {
+    if (!user) return;
+    await salvarCategoria(user.uid, cat);
+    await registrarAuditLog(user.uid, {
+      entidade: 'categoria',
+      entidadeId: cat.id,
+      acao: 'criacao',
+      detalhes: `Categoria "${cat.nome}" salva/atualizada`,
+    });
+  };
+
+  const handleExcluirCategoria = async (id: string, reatribuirParaId?: string) => {
+    if (!user) return;
+    const cat = categorias.find(c => c.id === id);
+    if (!cat) return;
+
+    if (reatribuirParaId) {
+      const lancsAfetados = lancamentos.filter(l => l.categoriaId === id);
+      for (const l of lancsAfetados) {
+        await salvarLancamento(user.uid, {
+          ...l,
+          categoriaId: reatribuirParaId,
+          atualizadoEm: new Date().toISOString(),
+        });
+      }
+    }
+
+    await excluirCategoria(user.uid, id);
+    await registrarAuditLog(user.uid, {
+      entidade: 'categoria',
+      entidadeId: id,
+      acao: 'exclusao',
+      detalhes: `Categoria "${cat.nome}" excluída${reatribuirParaId ? ' e lançamentos reatribuídos' : ''}`,
+    });
+  };
+
+  const handleMesclarCategorias = async (origemId: string, destinoId: string) => {
+    if (!user) return;
+    const catOrigem = categorias.find(c => c.id === origemId);
+    const catDestino = categorias.find(c => c.id === destinoId);
+    if (!catOrigem || !catDestino) return;
+
+    const lancsAfetados = lancamentos.filter(l => l.categoriaId === origemId);
+    for (const l of lancsAfetados) {
+      await salvarLancamento(user.uid, {
+        ...l,
+        categoriaId: destinoId,
+        atualizadoEm: new Date().toISOString(),
+      });
+    }
+
+    await excluirCategoria(user.uid, origemId);
+    await registrarAuditLog(user.uid, {
+      entidade: 'categoria',
+      entidadeId: origemId,
+      acao: 'atualizacao',
+      detalhes: `Categoria "${catOrigem.nome}" mesclada na categoria "${catDestino.nome}" (${lancsAfetados.length} lançamentos transferidos)`,
     });
   };
 
@@ -380,33 +925,243 @@ export function App() {
     await salvarCategoria(user.uid, catAtualizada);
   };
 
-  const handleImportarLote = async (cartaoId: string, faturaId: string, itens: ImportacaoFaturaItem[]) => {
+  const handleImportarLote = async (
+    cartaoId: string,
+    faturaId: string,
+    itens: ImportacaoFaturaItem[],
+    opcoes?: {
+      tipoDocumento?: string;
+      nomeEmissor?: string;
+      dataVencimento?: string;
+      criarContaPagar?: boolean;
+      valorTotalFatura?: number;
+      categoriaContaPagarId?: string;
+    }
+  ) => {
     if (!user) return;
-    for (const item of itens) {
-      if (!item.selecionado) continue;
+    
+    let targetCartaoId = cartaoId;
+    let targetCartao = cartoes.find(c => c.id === targetCartaoId);
+
+    const nomeEmissorOuCartao = opcoes?.nomeEmissor || 'Cartão de Crédito';
+    const dataVencimentoFatura = opcoes?.dataVencimento || new Date().toISOString().split('T')[0];
+    const selecionados = itens.filter(i => i.selecionado);
+
+    const isBoletoAvulso = opcoes?.tipoDocumento === 'boleto_cobranca' || 
+      (selecionados.length === 1 && (
+        selecionados[0].descricao.toLowerCase().includes('servopa') ||
+        selecionados[0].descricao.toLowerCase().includes('consórcio') ||
+        selecionados[0].descricao.toLowerCase().includes('consorcio') ||
+        selecionados[0].descricao.toLowerCase().includes('boleto') ||
+        selecionados[0].descricao.toLowerCase().includes('parcela')
+      ));
+
+    // FLUXO A: BOLETO / CONTA A PAGAR DIRETA (Ex: Consórcio Servopa, Boleto de Carro, etc.)
+    if (isBoletoAvulso) {
+      for (const item of selecionados) {
+        const valorItem = Math.abs(Number(item.valor) || 0);
+        const dataItem = item.data || dataVencimentoFatura || new Date().toISOString().split('T')[0];
+        const descItem = item.descricao.trim();
+
+        const novoId = `boleto_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+        const lanc: Lancamento = {
+          id: novoId,
+          tipo: 'despesa',
+          descricao: descItem,
+          valor: valorItem,
+          categoriaId: item.categoriaSugeridaId || 
+            categorias.find(c => c.nome.toLowerCase().includes('transporte') || c.nome.toLowerCase().includes('moradia'))?.id || 
+            (categorias[0]?.id || 'cat_outros'),
+          dataCompetencia: new Date().toISOString().split('T')[0],
+          dataVencimento: dataVencimentoFatura || dataItem,
+          status: 'pendente', // Pendente em Contas a Pagar
+          apenasVisualizacao: false, // Despesa Real a Pagar!
+          tags: ['contas-a-pagar', 'boleto', 'ia', 'despesa_direta'],
+          observacoes: `Boleto / Parcela extraída via IA (${nomeEmissorOuCartao}). Vencimento: ${(dataVencimentoFatura || dataItem).split('-').reverse().join('/')}.`,
+          criadoEm: new Date().toISOString(),
+          atualizadoEm: new Date().toISOString(),
+        };
+        await salvarLancamento(user.uid, lanc);
+      }
+
+      await registrarAuditLog(user.uid, {
+        entidade: 'lancamento',
+        entidadeId: `lote_${Date.now()}`,
+        acao: 'criacao',
+        detalhes: `Importado(s) ${selecionados.length} boleto(s) a pagar diretamente em Contas a Pagar`,
+      });
+
+      confetti({
+        particleCount: 70,
+        spread: 80,
+        origin: { y: 0.55 },
+      });
+      return;
+    }
+
+    // FLUXO B: FATURA DE CARTÃO DE CRÉDITO COM COMPRAS NO EXTRATO
+    let cardNomeFinal = nomeEmissorOuCartao;
+    if (cartaoId.startsWith('novo_cartao__')) {
+      cardNomeFinal = cartaoId.replace('novo_cartao__', '').trim() || nomeEmissorOuCartao;
+      targetCartao = undefined;
+    }
+
+    // Busca se já existe algum cartão com o nome do emissor (ex: Bradesco, Ailos)
+    if (!targetCartao && cardNomeFinal) {
+      targetCartao = cartoes.find(c => 
+        c.nome.toLowerCase().includes(cardNomeFinal.toLowerCase()) || 
+        cardNomeFinal.toLowerCase().includes(c.nome.toLowerCase())
+      );
+      if (targetCartao) {
+        targetCartaoId = targetCartao.id;
+      }
+    }
+
+    // Se ainda não existir o cartão para esse emissor, cria automaticamente o novo cartão isolado
+    if (!targetCartao) {
+      const novoCardId = `cartao_${cardNomeFinal.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${Date.now()}`;
+      const diaVencNum = dataVencimentoFatura ? parseInt(dataVencimentoFatura.split('-')[2], 10) || 5 : 5;
+      
+      let cardColor = '#0d9488';
+      const emissorLower = cardNomeFinal.toLowerCase();
+      if (emissorLower.includes('bradesco')) cardColor = '#cc092f';
+      else if (emissorLower.includes('ailos') || emissorLower.includes('viacredi')) cardColor = '#0077c8';
+      else if (emissorLower.includes('nubank')) cardColor = '#820ad1';
+      else if (emissorLower.includes('itau') || emissorLower.includes('itaú')) cardColor = '#ec7000';
+      else if (emissorLower.includes('santander')) cardColor = '#cc0000';
+      else if (emissorLower.includes('inter')) cardColor = '#ff7a00';
+      else if (emissorLower.includes('c6')) cardColor = '#1f2937';
+
+      const novoCartao: CartaoCredito = {
+        id: novoCardId,
+        nome: cardNomeFinal,
+        bandeira: emissorLower.includes('visa') ? 'visa' : 'mastercard',
+        limiteTotal: 10000,
+        limiteDisponivel: 10000,
+        diaFechamento: diaVencNum > 7 ? diaVencNum - 7 : 25,
+        diaVencimento: diaVencNum,
+        cor: cardColor,
+        ultimosDigitos: '4321',
+        ativo: true,
+      };
+      await salvarCartao(user.uid, novoCartao);
+      targetCartaoId = novoCardId;
+      targetCartao = novoCartao;
+    }
+
+    const nomeFinalCartao = targetCartao?.nome || cardNomeFinal;
+    const somaItens = selecionados.reduce((acc, it) => acc + (Math.abs(Number(it.valor)) || 0), 0);
+    const valorTotalFatura = opcoes?.valorTotalFatura && opcoes.valorTotalFatura > 0 
+      ? Number(opcoes.valorTotalFatura) 
+      : somaItens;
+
+    const deveCriarContaPagar = opcoes?.criarContaPagar !== false;
+    const faturaRefId = `fat_${targetCartaoId}_${Date.now()}`;
+
+    // 1. Salva cada lançamento detalhado extraído da fatura
+    for (const item of selecionados) {
+      const valorItem = Math.abs(Number(item.valor) || 0);
+      const dataItem = item.data || new Date().toISOString().split('T')[0];
+      const descItem = item.descricao.trim();
+
+      // Evita duplicar se já existir exatamente o mesmo lançamento no mesmo cartão
+      const jaExiste = lancamentos.some(
+        l => l.cartaoId === targetCartaoId && 
+             l.descricao.trim().toLowerCase() === descItem.toLowerCase() && 
+             l.valor === valorItem && 
+             (l.dataCompetencia === dataItem || l.dataVencimento === dataItem)
+      );
+
+      if (jaExiste) continue;
+
       const novoId = `lanc_imp_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
       const lanc: Lancamento = {
         id: novoId,
         tipo: 'despesa',
-        descricao: item.descricao,
-        valor: Number(item.valor),
+        descricao: descItem,
+        valor: valorItem,
         categoriaId: item.categoriaSugeridaId || (categorias[0]?.id || 'cat_outros'),
-        cartaoId,
+        cartaoId: targetCartaoId,
         faturaId: faturaId || 'fat_atual',
-        dataCompetencia: item.data || new Date().toISOString().split('T')[0],
-        dataVencimento: item.data || new Date().toISOString().split('T')[0],
-        status: 'pendente',
-        observacoes: 'Importado automaticamente via Leitor Inteligente Gemini IA',
+        dataCompetencia: dataItem,
+        dataVencimento: dataItem,
+        // Se gera a Conta a Pagar consolidada, a compra individual no cartão é marcada como 'pago' (já autorizada no cartão)
+        // e como apenasVisualizacao para não duplicar na soma do dashboard e contas a pagar
+        status: deveCriarContaPagar ? 'pago' : 'pendente',
+        apenasVisualizacao: deveCriarContaPagar,
+        tags: ['item_fatura', 'detalhamento_cartao', 'extrato_cartao'],
+        observacoes: `Compra da fatura ${nomeFinalCartao} (visualização no extrato)`.trim(),
         criadoEm: new Date().toISOString(),
         atualizadoEm: new Date().toISOString(),
       };
       await salvarLancamento(user.uid, lanc);
     }
 
+    // 2. Cria a Conta a Pagar consolidada com o Valor Total e a Data de Vencimento da Fatura
+    if (deveCriarContaPagar && valorTotalFatura > 0) {
+      // Remove fatura anterior pendente se for do mesmo cartão para evitar duplicidade
+      const faturaAnterior = lancamentos.find(
+        l => l.cartaoId === targetCartaoId && 
+             (l.tags?.includes('fatura') || l.descricao.toLowerCase().startsWith('fatura ')) &&
+             l.status === 'pendente'
+      );
+      if (faturaAnterior) {
+        await excluirLancamento(user.uid, faturaAnterior.id);
+      }
+
+      const contaPagarId = `fatura_pagar_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+      const catContaPagar = opcoes?.categoriaContaPagarId || 
+        categorias.find(c => c.nome.toLowerCase().includes('moradia') || c.nome.toLowerCase().includes('contas'))?.id || 
+        categorias[0]?.id || 
+        'cat_contas';
+
+      const contaPagarFatura: Lancamento = {
+        id: contaPagarId,
+        tipo: 'despesa',
+        descricao: `Fatura ${nomeFinalCartao} (${selecionados.length} compras)`,
+        valor: Number(valorTotalFatura.toFixed(2)),
+        categoriaId: catContaPagar,
+        cartaoId: targetCartaoId,
+        faturaId: faturaId || 'fat_atual',
+        dataCompetencia: new Date().toISOString().split('T')[0],
+        dataVencimento: dataVencimentoFatura,
+        status: 'pendente', // Fatura Pendente em Contas a Pagar
+        apenasVisualizacao: false,
+        observacoes: `Conta a pagar da fatura ${nomeFinalCartao} com ${selecionados.length} compras detalhadas extraídas via IA. Vencimento: ${dataVencimentoFatura.split('-').reverse().join('/')}.`,
+        tags: ['fatura', 'contas-a-pagar', 'cartao', 'ia'],
+        criadoEm: new Date().toISOString(),
+        atualizadoEm: new Date().toISOString(),
+      };
+      await salvarLancamento(user.uid, contaPagarFatura);
+
+      // Salva o documento de fechamento da fatura
+      const mesRef = new Date(dataVencimentoFatura).getMonth() + 1;
+      const anoRef = new Date(dataVencimentoFatura).getFullYear();
+      const faturaDoc: FaturaCartao = {
+        id: `fat_${targetCartaoId}_${anoRef}_${mesRef}`,
+        cartaoId: targetCartaoId,
+        mesReferencia: mesRef,
+        anoReferencia: anoRef,
+        dataFechamento: new Date().toISOString().split('T')[0],
+        dataVencimento: dataVencimentoFatura,
+        valorTotal: valorTotalFatura,
+        status: 'fechada',
+        itensCount: selecionados.length,
+      };
+      await salvarFatura(user.uid, faturaDoc);
+    }
+
+    await registrarAuditLog(user.uid, {
+      entidade: 'lancamento',
+      entidadeId: `lote_${Date.now()}`,
+      acao: 'criacao',
+      detalhes: `Importados ${selecionados.length} compras da fatura ${nomeFinalCartao} e gerada Conta a Pagar de R$ ${valorTotalFatura.toFixed(2)} com vencimento em ${dataVencimentoFatura}`,
+    });
+
     confetti({
-      particleCount: 60,
-      spread: 80,
-      origin: { y: 0.6 },
+      particleCount: 85,
+      spread: 90,
+      origin: { y: 0.55 },
     });
   };
 
@@ -419,6 +1174,7 @@ export function App() {
         setCurrentTab={setCurrentTab}
         onOpenNovoLancamento={() => setModalNovoAberto(true)}
         onOpenSqlModal={() => setModalSqlAberto(true)}
+        onOpenCategoriasModal={() => setModalCategoriasAberto(true)}
         saldoConsolidado={resumo?.saldoTotalConsolidado ?? 0}
       />
 
@@ -451,6 +1207,17 @@ export function App() {
                 onNovoLancamento={() => setModalNovoAberto(true)}
                 onPagar={handlePagarLancamento}
                 onCancelar={handleCancelarLancamento}
+                onReabrir={handleReabrirLancamento}
+                onAlterarStatus={handleAlterarStatusLancamento}
+                onAlterarCategoria={handleAlterarCategoriaLancamento}
+                onConverterParaDespesaReal={handleConverterParaDespesaReal}
+                onAtualizarLancamento={handleAtualizarLancamentoCompleto}
+                onDuplicarLancamento={handleDuplicarLancamento}
+                onDividirLancamento={handleDividirLancamento}
+                onAbrirGerenciadorCategorias={() => setModalCategoriasAberto(true)}
+                onDeduplicar={handleDeduplicarLancamentos}
+                onCorrigirFatura={handleCorrigirFaturaDuplicada}
+                onSepararCartoes={handleSepararFaturasCartoes}
                 onExcluir={handleExcluirLancamento}
                 onNavigateTab={setCurrentTab}
               />
@@ -524,6 +1291,25 @@ export function App() {
       <SqlSchemaModal
         isOpen={modalSqlAberto}
         onClose={() => setModalSqlAberto(false)}
+      />
+
+      {/* Modal de Pagamento de Conta com Opção de Juros/Multa */}
+      <ModalPagarConta
+        lancamento={lancamentoParaPagar}
+        contas={contas}
+        onClose={() => setLancamentoParaPagar(null)}
+        onConfirmarPagamento={handleConfirmarPagamentoComJuros}
+      />
+
+      {/* Modal de Gestão Completa de Categorias (Renomear, Editar, Excluir, Mesclar) */}
+      <ModalGerenciarCategorias
+        isOpen={modalCategoriasAberto}
+        onClose={() => setModalCategoriasAberto(false)}
+        categorias={categorias}
+        lancamentos={lancamentos}
+        onSalvarCategoria={handleSalvarCategoria}
+        onExcluirCategoria={handleExcluirCategoria}
+        onMesclarCategorias={handleMesclarCategorias}
       />
 
     </div>

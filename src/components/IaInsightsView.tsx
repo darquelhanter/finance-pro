@@ -47,11 +47,14 @@ export const IaInsightsView: React.FC<IaInsightsViewProps> = ({
         body: JSON.stringify({ resumo }),
       });
       if (res.ok) {
-        const data = await res.json();
-        setInsights(Array.isArray(data) ? data : []);
+        const ct = res.headers.get('content-type') || '';
+        if (ct.includes('application/json')) {
+          const data = await res.json();
+          setInsights(Array.isArray(data) ? data : []);
+        }
       }
     } catch (err) {
-      console.error(err);
+      console.error('Falha ao carregar insights:', err);
     } finally {
       setCarregando(false);
     }
