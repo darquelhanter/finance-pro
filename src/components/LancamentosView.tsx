@@ -61,6 +61,7 @@ interface LancamentosViewProps {
   onDeduplicar?: () => Promise<number>;
   onCorrigirFatura?: () => Promise<void>;
   onSepararCartoes?: () => Promise<void>;
+  onConsolidarContaVivo?: () => Promise<void>;
   onExcluir: (id: string) => void;
   onNavigateTab: (tab: string) => void;
   onAbrirGerenciadorCategorias?: () => void;
@@ -84,6 +85,7 @@ export const LancamentosView: React.FC<LancamentosViewProps> = ({
   onDeduplicar,
   onCorrigirFatura,
   onSepararCartoes,
+  onConsolidarContaVivo,
   onExcluir,
   onNavigateTab,
   onAbrirGerenciadorCategorias,
@@ -347,6 +349,22 @@ export const LancamentosView: React.FC<LancamentosViewProps> = ({
     }
   };
 
+  const handleRunConsolidarVivo = async () => {
+    if (!onConsolidarContaVivo) return;
+    setActionLoading(true);
+    await onConsolidarContaVivo();
+    setActionLoading(false);
+    showNotification('Conta da Vivo consolidada com sucesso no valor total em Contas a Pagar!');
+  };
+
+  const hasItensVivo = useMemo(() => {
+    return lancamentos.some(l => {
+      const d = l.descricao.toLowerCase();
+      const obs = (l.observacoes || '').toLowerCase();
+      return d.includes('vivo') || d.includes('fibra') || obs.includes('vivo');
+    });
+  }, [lancamentos]);
+
   const handleConverterDireto = async (id: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     if (!onConverterParaDespesaReal) return;
@@ -379,6 +397,20 @@ export const LancamentosView: React.FC<LancamentosViewProps> = ({
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
+          {/* Quick Action Consolidate Vivo */}
+          {hasItensVivo && onConsolidarContaVivo && (
+            <button
+              id="btn-consolidar-conta-vivo"
+              onClick={handleRunConsolidarVivo}
+              disabled={actionLoading}
+              title="Consolida os itens e parcelas da Vivo em uma única Conta a Pagar com valor total correto"
+              className="px-3 py-2 rounded-xl bg-purple-500/15 hover:bg-purple-500/25 text-purple-300 border border-purple-500/35 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer animate-pulse"
+            >
+              <Receipt className="w-3.5 h-3.5 text-purple-400" />
+              <span>Consolidar Conta Vivo (Total)</span>
+            </button>
+          )}
+
           {/* Quick Action Separate Cards */}
           <button
             id="btn-separar-cartoes-faturas"
@@ -796,7 +828,19 @@ export const LancamentosView: React.FC<LancamentosViewProps> = ({
                   const cat = categorias.find((c) => c.id === lanc.categoriaId);
                   const conta = contas.find((c) => c.id === lanc.contaId);
                   const cartao = cartoes.find((car) => car.id === lanc.cartaoId);
-                  const isFatura = lanc.tags?.includes('fatura') || lanc.tags?.includes('contas-a-pagar') || lanc.descricao.toLowerCase().startsWith('fatura ');
+                  
+                  const isFatura = (lanc.tags?.includes('fatura') || lanc.descricao.toLowerCase().startsWith('fatura ')) && 
+                    !lanc.tags?.includes('despesa_direta') && 
+                    !lanc.tags?.includes('boleto') && 
+                    !lanc.tags?.includes('conta_servico');
+
+                  const isBoletoConta = lanc.tags?.includes('boleto') || 
+                    lanc.tags?.includes('conta_servico') || 
+                    lanc.tags?.includes('despesa_direta') || 
+                    lanc.descricao.toLowerCase().includes('vivo') || 
+                    lanc.descricao.toLowerCase().includes('servopa') || 
+                    lanc.descricao.toLowerCase().includes('consórcio');
+
                   const isItemInformativo = isItemInformativoFatura(lanc, lancamentos);
                   const isSelected = selectedIds.includes(lanc.id);
                   
@@ -807,7 +851,7 @@ export const LancamentosView: React.FC<LancamentosViewProps> = ({
                     <React.Fragment key={lanc.id}>
                       <tr 
                         className={`hover:bg-slate-800/40 transition-colors ${
-                          isSelected ? 'bg-indigo-950/30' : isFatura ? 'bg-teal-950/20 font-medium' : isItemInformativo ? 'bg-indigo-950/10' : ''
+                          isSelected ? 'bg-indigo-950/30' : isFatura ? 'bg-teal-950/20 font-medium' : isBoletoConta ? 'bg-purple-950/15' : isItemInformativo ? 'bg-indigo-950/10' : ''
                         }`}
                       >
                         {/* Checkbox */}
@@ -892,7 +936,14 @@ export const LancamentosView: React.FC<LancamentosViewProps> = ({
                                 </span>
                               )}
 
-                              {isItemInformativo && (
+                              {isBoletoConta && !isFatura && (
+                                <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 font-semibold border border-purple-500/30">
+                                  <Receipt className="w-2.5 h-2.5" />
+                                  Boleto / Conta Direta
+                                </span>
+                              )}
+
+                              {isItemInformativo && !isBoletoConta && (
                                 <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 font-semibold border border-indigo-500/30" title="Item do extrato do cartão.">
                                   <CreditCard className="w-2.5 h-2.5" />
                                   Extrato Cartão

@@ -15,6 +15,7 @@ import { ContasCartoesView } from './components/ContasCartoesView';
 import { ImportacaoFaturaView } from './components/ImportacaoFaturaView';
 import { OrcamentosView } from './components/OrcamentosView';
 import { IaInsightsView } from './components/IaInsightsView';
+import { FaturasParcelamentosView } from './components/FaturasParcelamentosView';
 import { NovoLancamentoModal } from './components/NovoLancamentoModal';
 import { SqlSchemaModal } from './components/SqlSchemaModal';
 import { ModalPagarConta } from './components/ModalPagarConta';
@@ -30,6 +31,7 @@ import {
   DadosPagamento
 } from './types';
 import { formatarMoeda } from './utils/format';
+import { ParcelamentoService } from './utils/parcelas';
 import {
   subscribeContas,
   subscribeCartoes,
@@ -613,6 +615,71 @@ export function App() {
     await handleSepararFaturasCartoes();
   };
 
+  const handleConsolidarContaVivo = async () => {
+    if (!user) return;
+    
+    // Procura todos os lançamentos relacionados à Vivo (ou fibra)
+    const itensVivo = lancamentos.filter(l => {
+      const d = l.descricao.toLowerCase();
+      const obs = (l.observacoes || '').toLowerCase();
+      return d.includes('vivo') || d.includes('fibra') || obs.includes('vivo');
+    });
+
+    if (itensVivo.length === 0) return;
+
+    // Acha a categoria adequada (Software & Assinaturas ou Moradia & Aluguel)
+    const catServicos = categorias.find(c => c.id === 'cat_servicos' || c.nome.toLowerCase().includes('software') || c.nome.toLowerCase().includes('assinatura') || c.nome.toLowerCase().includes('serviço'));
+    const catMoradia = categorias.find(c => c.id === 'cat_moradia' || c.nome.toLowerCase().includes('moradia'));
+    const categoriaFinalId = catServicos?.id || catMoradia?.id || (categorias[0]?.id || 'cat_outros');
+
+    // Calcula valor total somado de todos os fragmentos da Vivo
+    const somaTotal = itensVivo.reduce((acc, it) => acc + (Math.abs(Number(it.valor)) || 0), 0);
+    
+    // Pega a data de vencimento mais próxima/recente
+    const dataVenc = itensVivo.find(i => i.dataVencimento)?.dataVencimento || new Date().toISOString().split('T')[0];
+
+    // Detalhes dos itens originais para salvar na observação
+    const detalhamento = itensVivo.map(i => `• ${i.descricao}: R$ ${Number(i.valor).toFixed(2)}`).join('\n');
+
+    // Remove os itens fragmentados da Vivo
+    for (const it of itensVivo) {
+      await excluirLancamento(user.uid, it.id);
+    }
+
+    // Cria o lançamento único consolidado no valor total real
+    const novoId = `vivo_consolidada_${Date.now()}`;
+    const contaVivo: Lancamento = {
+      id: novoId,
+      tipo: 'despesa',
+      descricao: 'Vivo - Conta Telefonia & Internet',
+      valor: somaTotal,
+      categoriaId: categoriaFinalId,
+      dataCompetencia: new Date().toISOString().split('T')[0],
+      dataVencimento: dataVenc,
+      status: 'pendente',
+      apenasVisualizacao: false,
+      tags: ['contas-a-pagar', 'despesa_direta', 'boleto', 'conta_servico', 'ia'],
+      observacoes: `Conta Vivo Consolidada (Total R$ ${somaTotal.toFixed(2)}). Detalhamento dos serviços:\n${detalhamento}`,
+      criadoEm: new Date().toISOString(),
+      atualizadoEm: new Date().toISOString(),
+    };
+
+    await salvarLancamento(user.uid, contaVivo);
+
+    await registrarAuditLog(user.uid, {
+      entidade: 'lancamento',
+      entidadeId: novoId,
+      acao: 'atualizacao',
+      detalhes: `Conta da Vivo consolidada: ${itensVivo.length} itens unidos em um lançamento único de R$ ${somaTotal.toFixed(2)} em Contas a Pagar`,
+    });
+
+    confetti({
+      particleCount: 85,
+      spread: 90,
+      origin: { y: 0.5 },
+    });
+  };
+
   const handleExcluirLancamento = async (id: string) => {
     if (!user) return;
     const lanc = lancamentos.find(l => l.id === id);
@@ -793,15 +860,20 @@ export function App() {
 
   const handleCriarParcelado = async (dto: any) => {
     if (!user) return;
-    const totalParcelas = Number(dto.totalParcelas) || 1;
-    const valorTotal = Number(dto.valorTotal);
-    const valorParcela = Number((valorTotal / totalParcelas).toFixed(2));
+    const totalParcelas = Number(dto.numeroParcelas || dto.totalParcelas) || 1;
+    const valorTotal = Number(dto.valor || dto.valorTotal);
     const paiId = `lanc_parc_${Date.now()}`;
-    const dataInicial = new Date(dto.primeiroVencimento || new Date());
+    const dataInicialStr = dto.dataVencimento || dto.primeiroVencimento || new Date().toISOString().split('T')[0];
+    const [anoIni, mesIni, diaIni] = dataInicialStr.split('-').map(Number);
+
+    const valorBaseCentavos = Math.floor((valorTotal * 100) / totalParcelas);
+    const restoCentavos = Math.round(valorTotal * 100) - (valorBaseCentavos * totalParcelas);
 
     for (let i = 1; i <= totalParcelas; i++) {
-      const dataVenc = new Date(dataInicial);
-      dataVenc.setMonth(dataVenc.getMonth() + (i - 1));
+      const centavos = valorBaseCentavos + (i === 1 ? restoCentavos : 0);
+      const valorParcela = centavos / 100;
+
+      const dataVenc = new Date(anoIni, mesIni - 1 + (i - 1), diaIni || 10);
       const vencStr = dataVenc.toISOString().split('T')[0];
 
       const parcelaId = `${paiId}_${i}`;
@@ -813,9 +885,12 @@ export function App() {
         categoriaId: dto.categoriaId,
         cartaoId: dto.cartaoId || undefined,
         contaId: dto.contaId || undefined,
-        dataCompetencia: dto.primeiroVencimento || new Date().toISOString().split('T')[0],
+        dataCompetencia: dto.dataCompetencia || dataInicialStr,
         dataVencimento: vencStr,
-        status: 'pendente',
+        status: (i === 1 && dto.status === 'pago') ? 'pago' : 'pendente',
+        dataPagamento: (i === 1 && dto.status === 'pago') ? (dto.dataPagamento || vencStr) : undefined,
+        observacoes: dto.observacoes,
+        tags: dto.tags || ['parcelamento', 'cartao'],
         parcela: {
           numero: i,
           total: totalParcelas,
@@ -831,7 +906,13 @@ export function App() {
       entidade: 'lancamento',
       entidadeId: paiId,
       acao: 'criacao',
-      detalhes: `Criada compra parcelada: ${dto.descricao} em ${totalParcelas}x de R$ ${valorParcela}`,
+      detalhes: `Criada compra parcelada: ${dto.descricao} em ${totalParcelas}x de R$ ${(valorTotal / totalParcelas).toFixed(2)}`,
+    });
+
+    confetti({
+      particleCount: 50,
+      spread: 60,
+      origin: { y: 0.7 },
     });
   };
 
@@ -931,6 +1012,7 @@ export function App() {
     itens: ImportacaoFaturaItem[],
     opcoes?: {
       tipoDocumento?: string;
+      modoLancamento?: 'conta_unica' | 'itens_discriminados';
       nomeEmissor?: string;
       dataVencimento?: string;
       criarContaPagar?: boolean;
@@ -944,55 +1026,128 @@ export function App() {
     let targetCartao = cartoes.find(c => c.id === targetCartaoId);
 
     const nomeEmissorOuCartao = opcoes?.nomeEmissor || 'Cartão de Crédito';
+    const emissorLower = nomeEmissorOuCartao.toLowerCase();
     const dataVencimentoFatura = opcoes?.dataVencimento || new Date().toISOString().split('T')[0];
     const selecionados = itens.filter(i => i.selecionado);
 
-    const isBoletoAvulso = opcoes?.tipoDocumento === 'boleto_cobranca' || 
-      (selecionados.length === 1 && (
-        selecionados[0].descricao.toLowerCase().includes('servopa') ||
-        selecionados[0].descricao.toLowerCase().includes('consórcio') ||
-        selecionados[0].descricao.toLowerCase().includes('consorcio') ||
-        selecionados[0].descricao.toLowerCase().includes('boleto') ||
-        selecionados[0].descricao.toLowerCase().includes('parcela')
-      ));
+    const isBoletoAvulso = 
+      opcoes?.tipoDocumento === 'boleto_cobranca' || 
+      emissorLower.includes('vivo') || 
+      emissorLower.includes('claro') || 
+      emissorLower.includes('tim') || 
+      emissorLower.includes('oi') || 
+      emissorLower.includes('copel') || 
+      emissorLower.includes('enel') || 
+      emissorLower.includes('sabesp') || 
+      emissorLower.includes('sanepar') || 
+      emissorLower.includes('servopa') || 
+      emissorLower.includes('consórcio') || 
+      emissorLower.includes('consorcio') || 
+      emissorLower.includes('condom') || 
+      emissorLower.includes('aluguel') ||
+      selecionados.some(s => {
+        const d = s.descricao.toLowerCase();
+        return d.includes('vivo') || d.includes('fibra') || d.includes('servopa') || d.includes('consórcio') || d.includes('consorcio') || d.includes('boleto');
+      });
 
-    // FLUXO A: BOLETO / CONTA A PAGAR DIRETA (Ex: Consórcio Servopa, Boleto de Carro, etc.)
+    // FLUXO A: BOLETO / CONTA DE SERVIÇO / TELECOM A PAGAR DIRETA (Ex: Vivo, Consórcio Servopa, Copel, etc.)
     if (isBoletoAvulso) {
-      for (const item of selecionados) {
-        const valorItem = Math.abs(Number(item.valor) || 0);
-        const dataItem = item.data || dataVencimentoFatura || new Date().toISOString().split('T')[0];
-        const descItem = item.descricao.trim();
+      const somaItens = selecionados.reduce((acc, it) => acc + (Math.abs(Number(it.valor)) || 0), 0);
+      const valorFinal = opcoes?.valorTotalFatura && Number(opcoes.valorTotalFatura) > 0 
+        ? Number(opcoes.valorTotalFatura) 
+        : somaItens;
 
-        const novoId = `boleto_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+      // Categoria padrão inteligente
+      const catServicos = categorias.find(c => c.id === 'cat_servicos' || c.nome.toLowerCase().includes('software') || c.nome.toLowerCase().includes('assinatura') || c.nome.toLowerCase().includes('serviço'));
+      const catMoradia = categorias.find(c => c.id === 'cat_moradia' || c.nome.toLowerCase().includes('moradia'));
+      const catTransporte = categorias.find(c => c.id === 'cat_transporte' || c.nome.toLowerCase().includes('transporte'));
+
+      let categoriaPadraoId = opcoes?.categoriaContaPagarId;
+      if (!categoriaPadraoId) {
+        if (emissorLower.includes('vivo') || emissorLower.includes('claro') || emissorLower.includes('tim') || selecionados.some(s => s.descricao.toLowerCase().includes('vivo') || s.descricao.toLowerCase().includes('fibra'))) {
+          categoriaPadraoId = catServicos?.id || catMoradia?.id || (categorias[0]?.id || 'cat_outros');
+        } else if (emissorLower.includes('copel') || emissorLower.includes('enel') || emissorLower.includes('sabesp') || emissorLower.includes('condom') || emissorLower.includes('aluguel')) {
+          categoriaPadraoId = catMoradia?.id || (categorias[0]?.id || 'cat_outros');
+        } else if (emissorLower.includes('servopa') || emissorLower.includes('consórcio') || emissorLower.includes('consorcio')) {
+          categoriaPadraoId = catTransporte?.id || (categorias[0]?.id || 'cat_outros');
+        } else {
+          categoriaPadraoId = selecionados[0]?.categoriaSugeridaId || (categorias[0]?.id || 'cat_outros');
+        }
+      }
+
+      // Se o modo for Conta Única (padrão para boletos/contas de serviços como Vivo)
+      const modo = opcoes?.modoLancamento || 'conta_unica';
+      if (modo === 'conta_unica') {
+        const novoId = `boleto_total_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+        const tituloConta = emissorLower.includes('vivo') 
+          ? 'Vivo - Conta Telefonia & Internet'
+          : emissorLower.includes('servopa')
+          ? 'Consórcio Servopa - Parcela'
+          : `${nomeEmissorOuCartao} - Conta / Boleto`;
+
+        const detalhamento = selecionados
+          .map(s => `• ${s.descricao}: R$ ${Number(s.valor).toFixed(2)}`)
+          .join('\n');
+
         const lanc: Lancamento = {
           id: novoId,
           tipo: 'despesa',
-          descricao: descItem,
-          valor: valorItem,
-          categoriaId: item.categoriaSugeridaId || 
-            categorias.find(c => c.nome.toLowerCase().includes('transporte') || c.nome.toLowerCase().includes('moradia'))?.id || 
-            (categorias[0]?.id || 'cat_outros'),
+          descricao: tituloConta,
+          valor: valorFinal,
+          categoriaId: categoriaPadraoId,
           dataCompetencia: new Date().toISOString().split('T')[0],
-          dataVencimento: dataVencimentoFatura || dataItem,
+          dataVencimento: dataVencimentoFatura,
           status: 'pendente', // Pendente em Contas a Pagar
           apenasVisualizacao: false, // Despesa Real a Pagar!
-          tags: ['contas-a-pagar', 'boleto', 'ia', 'despesa_direta'],
-          observacoes: `Boleto / Parcela extraída via IA (${nomeEmissorOuCartao}). Vencimento: ${(dataVencimentoFatura || dataItem).split('-').reverse().join('/')}.`,
+          tags: ['contas-a-pagar', 'boleto', 'conta_servico', 'despesa_direta', 'ia'],
+          observacoes: `Conta / Boleto ${nomeEmissorOuCartao} (Vencimento: ${dataVencimentoFatura.split('-').reverse().join('/')}). Detalhamento dos serviços:\n${detalhamento}`,
           criadoEm: new Date().toISOString(),
           atualizadoEm: new Date().toISOString(),
         };
         await salvarLancamento(user.uid, lanc);
+
+        await registrarAuditLog(user.uid, {
+          entidade: 'lancamento',
+          entidadeId: novoId,
+          acao: 'criacao',
+          detalhes: `Importada conta única de ${tituloConta} no valor de R$ ${valorFinal.toFixed(2)} com vencimento em ${dataVencimentoFatura}`,
+        });
+      } else {
+        // Modo Itens Discriminados
+        for (const item of selecionados) {
+          const valorItem = Math.abs(Number(item.valor) || 0);
+          const dataItem = item.data || dataVencimentoFatura || new Date().toISOString().split('T')[0];
+          const descItem = item.descricao.trim();
+
+          const novoId = `boleto_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+          const lanc: Lancamento = {
+            id: novoId,
+            tipo: 'despesa',
+            descricao: descItem,
+            valor: valorItem,
+            categoriaId: item.categoriaSugeridaId || categoriaPadraoId,
+            dataCompetencia: new Date().toISOString().split('T')[0],
+            dataVencimento: dataVencimentoFatura || dataItem,
+            status: 'pendente', // Pendente em Contas a Pagar
+            apenasVisualizacao: false, // Despesa Real a Pagar!
+            tags: ['contas-a-pagar', 'boleto', 'conta_servico', 'ia', 'despesa_direta'],
+            observacoes: `Item de conta / boleto (${nomeEmissorOuCartao}). Vencimento: ${(dataVencimentoFatura || dataItem).split('-').reverse().join('/')}.`,
+            criadoEm: new Date().toISOString(),
+            atualizadoEm: new Date().toISOString(),
+          };
+          await salvarLancamento(user.uid, lanc);
+        }
+
+        await registrarAuditLog(user.uid, {
+          entidade: 'lancamento',
+          entidadeId: `lote_${Date.now()}`,
+          acao: 'criacao',
+          detalhes: `Importados ${selecionados.length} itens de ${nomeEmissorOuCartao} diretamente em Contas a Pagar`,
+        });
       }
 
-      await registrarAuditLog(user.uid, {
-        entidade: 'lancamento',
-        entidadeId: `lote_${Date.now()}`,
-        acao: 'criacao',
-        detalhes: `Importado(s) ${selecionados.length} boleto(s) a pagar diretamente em Contas a Pagar`,
-      });
-
       confetti({
-        particleCount: 70,
+        particleCount: 75,
         spread: 80,
         origin: { y: 0.55 },
       });
@@ -1074,6 +1229,11 @@ export function App() {
 
       if (jaExiste) continue;
 
+      const infoParc = ParcelamentoService.extrairInfoDescricao(descItem);
+      const numParc = item.parcelaAtual || infoParc.parcelaAtual;
+      const totParc = item.totalParcelas || infoParc.totalParcelas;
+      const descLimpa = infoParc.descricaoBase || descItem;
+
       const novoId = `lanc_imp_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
       const lanc: Lancamento = {
         id: novoId,
@@ -1089,8 +1249,18 @@ export function App() {
         // e como apenasVisualizacao para não duplicar na soma do dashboard e contas a pagar
         status: deveCriarContaPagar ? 'pago' : 'pendente',
         apenasVisualizacao: deveCriarContaPagar,
-        tags: ['item_fatura', 'detalhamento_cartao', 'extrato_cartao'],
-        observacoes: `Compra da fatura ${nomeFinalCartao} (visualização no extrato)`.trim(),
+        parcela: numParc && totParc && totParc > 1 ? {
+          numero: numParc,
+          total: totParc,
+          lancamentoPaiId: `imp_parc_${descLimpa.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${targetCartaoId}_${totParc}`,
+        } : undefined,
+        tags: [
+          'item_fatura', 
+          'detalhamento_cartao', 
+          'extrato_cartao',
+          ...(numParc && totParc && totParc > 1 ? ['parcelamento', `parc_${numParc}_${totParc}`] : [])
+        ],
+        observacoes: `Compra da fatura ${nomeFinalCartao} (visualização no extrato)${numParc && totParc ? ` - Parcela ${numParc}/${totParc}` : ''}`.trim(),
         criadoEm: new Date().toISOString(),
         atualizadoEm: new Date().toISOString(),
       };
@@ -1165,6 +1335,37 @@ export function App() {
     });
   };
 
+  const handleAtualizarLoteLancamentos = async (atualizacoes: Partial<Lancamento>[]) => {
+    if (!user || atualizacoes.length === 0) return;
+    
+    const promises = atualizacoes.map(async (item) => {
+      if (!item.id) return;
+      const existente = lancamentos.find(l => l.id === item.id);
+      if (existente) {
+        return salvarLancamento(user.uid, {
+          ...existente,
+          ...item,
+          atualizadoEm: new Date().toISOString(),
+        });
+      }
+    });
+
+    await Promise.all(promises);
+
+    await registrarAuditLog(user.uid, {
+      entidade: 'lancamento',
+      entidadeId: `audit_parc_${Date.now()}`,
+      acao: 'atualizacao',
+      detalhes: `Sincronizadas ${atualizacoes.length} parcelas identificadas automaticamente`,
+    });
+
+    confetti({
+      particleCount: 75,
+      spread: 80,
+      origin: { y: 0.6 },
+    });
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-emerald-500/30 selection:text-emerald-200">
       
@@ -1218,6 +1419,7 @@ export function App() {
                 onDeduplicar={handleDeduplicarLancamentos}
                 onCorrigirFatura={handleCorrigirFaturaDuplicada}
                 onSepararCartoes={handleSepararFaturasCartoes}
+                onConsolidarContaVivo={handleConsolidarContaVivo}
                 onExcluir={handleExcluirLancamento}
                 onNavigateTab={setCurrentTab}
               />
@@ -1229,6 +1431,18 @@ export function App() {
                 cartoes={cartoes}
                 onCriarConta={handleCriarConta}
                 onCriarCartao={handleCriarCartao}
+                onNavigateTab={setCurrentTab}
+              />
+            )}
+
+            {currentTab === 'faturas_parcelamentos' && (
+              <FaturasParcelamentosView
+                lancamentos={lancamentos}
+                cartoes={cartoes}
+                categorias={categorias}
+                onCriarParcelado={handleCriarParcelado}
+                onAtualizarLoteLancamentos={handleAtualizarLoteLancamentos}
+                onNavigateTab={setCurrentTab}
               />
             )}
 

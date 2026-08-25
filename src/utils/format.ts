@@ -32,14 +32,22 @@ export function isItemInformativoFatura(
   },
   todosLancamentos?: any[]
 ): boolean {
+  // Se for explicitamente boleto, despesa direta ou conta de serviço (ex: Vivo, Copel, Consórcio), NUNCA é item informativo de fatura
+  if (lanc.tags?.includes('despesa_direta') || lanc.tags?.includes('boleto') || lanc.tags?.includes('conta_servico')) {
+    return false;
+  }
+
+  const descLower = (lanc.descricao || '').toLowerCase();
+  if (descLower.includes('vivo') || descLower.includes('fibra') || descLower.includes('servopa') || descLower.includes('consórcio') || descLower.includes('consorcio')) {
+    return false;
+  }
+
   if (lanc.apenasVisualizacao) return true;
   if (lanc.tags?.includes('item_fatura') || lanc.tags?.includes('detalhamento_cartao')) return true;
 
-  const descLower = (lanc.descricao || '').toLowerCase();
-  const isFaturaConsolidada = lanc.tags?.includes('fatura') || 
-    lanc.tags?.includes('contas-a-pagar') || 
-    descLower.startsWith('fatura ') || 
-    descLower.includes('(fatura total)');
+  const isFaturaConsolidada = (lanc.tags?.includes('fatura') || descLower.startsWith('fatura ') || descLower.includes('(fatura total)')) && 
+    !lanc.tags?.includes('despesa_direta') && 
+    !lanc.tags?.includes('boleto');
 
   // Se este lançamento NÃO é a fatura consolidada, mas está vinculado a um cartão:
   if (!isFaturaConsolidada && lanc.cartaoId) {

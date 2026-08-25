@@ -18,7 +18,12 @@ import {
   Send,
   Calendar,
   DollarSign,
-  Receipt
+  Receipt,
+  Layers,
+  Tag,
+  Edit2,
+  Plus,
+  Minus
 } from 'lucide-react';
 import { CartaoCredito, Categoria, ImportacaoFaturaItem, ExtracaoFaturaResponse } from '../types';
 import { formatarMoeda } from '../utils/format';
@@ -32,6 +37,7 @@ interface ImportacaoFaturaViewProps {
     itens: ImportacaoFaturaItem[], 
     opcoes?: {
       tipoDocumento?: string;
+      modoLancamento?: 'conta_unica' | 'itens_discriminados';
       nomeEmissor?: string;
       dataVencimento?: string;
       criarContaPagar?: boolean;
@@ -43,6 +49,46 @@ interface ImportacaoFaturaViewProps {
 }
 
 const EXEMPLOS_FATURA = [
+  {
+    nome: 'Ailos Mastercard (Seu Extrato)',
+    texto: `LANÇAMENTOS - AILOS MASTERCARD NOW PERSONALIZADO PRO
+MOVIMENTAÇÕES DA CONTA
+SALDO ANTERIOR R$ 906,52
+ 04 MAI ANUIDADE MASTERCARD
+(7402) 03/12 R$ 9,90
+ 08 JUL PAGAMENTO-BOLETO BANCARIO-R$ 906,52
+ DATA DESCRIÇÃO CIDADE VALOR EM R$
+JOAO PAULO FERREIRA 7402
+ 18 FEV ZP*P. M. CONSIG LTDA
+06/06 CURITIBA R$ 390,00
+ 12 MAR HAVAN LOJAS DE DEPAR
+05/05 ARAUCARIA R$ 40,59
+ 10 ABR ANTONIO GUAITA NETO
+04/04 ALMIRANTE TAM R$ 146,39
+ 09 MAI HAVAN PAROLIN CURITI
+03/05 CURITIBA R$ 26,98
+ 10 JUN ZP*P. M. CONSIG LTDA
+02/06 CURITIBA R$ 289,67
+ 10 JUL APPLE.COM/BILL SAO PAULO R$ 32,70
+ 10 JUL CANTINHO DAS DELICIA CURITIBA R$ 31,10
+ 10 JUL ILAIR DUTRA AND BEAU FAZENDA RIO G R$ 60,00
+ 10 JUL SUPER SAO LOURENCO CURITIBA R$ 35,15
+ 11 JUL MGM MERCEARIA LTDA M CURITIBA R$ 29,46
+ 11 JUL APPLE.COM/BILL SAO PAULO R$ 44,80
+ 12 JUL A CASA DO BRUNAO CURITIBA R$ 53,40
+TOTAL R$ 1.836,23`
+  },
+  {
+    nome: 'Parcelas 05/06 & 03/12',
+    texto: `EXTRATO CARTÃO DE CRÉDITO - FATURA MENSAL
+Titular: Maria Aparecida
+Vencimento: 10/09/2026
+Total da Fatura: R$ 540,04
+
+TRANSAÇÕES:
+61326619Maria       05/06 CURITIBA 500,00
+PARC.FACIL          03/12 40,04`
+  },
   {
     nome: 'Nubank (Exemplo)',
     texto: `FATURA NUBANK - MASTERCARD BLACK
@@ -58,19 +104,6 @@ Lançamentos:
 20/08/2026 - DROGASIL FARMACIA - R$ 98,50
 22/08/2026 - ZARA BRASIL (02/05) - R$ 239,10
 24/08/2026 - SAM'S CLUB MERCADO - R$ 1.000,00`
-  },
-  {
-    nome: 'Itaú (Exemplo)',
-    texto: `Extrato Cartão Itaú Visa Infinite
-Vencimento: 22/08/2026
-Total Fatura: R$ 3.120,45
-
-02/08 - APPLE STORE BR (03/10) R$ 849,90
-05/08 - UBER *TRIP SAO PAULO R$ 38,70
-08/08 - SUPERMERCADO ST MARCHE R$ 412,30
-11/08 - HOSP SAMARITANO CONSULTA R$ 650,00
-15/08 - KALUNGA MATERIAL ESCRITORIO R$ 189,55
-19/08 - RESTAURANTE FASANO R$ 980,00`
   }
 ];
 
@@ -109,8 +142,54 @@ export const ImportacaoFaturaView: React.FC<ImportacaoFaturaViewProps> = ({
   const [sucessoImportacao, setSucessoImportacao] = useState(false);
   const [erroMsg, setErroMsg] = useState<string | null>(null);
 
+  // Modal / Drawer de Edição de Item e Parcelamento
+  const [itemEmEdicao, setItemEmEdicao] = useState<ImportacaoFaturaItem | null>(null);
+  const [editDescricao, setEditDescricao] = useState('');
+  const [editValor, setEditValor] = useState('');
+  const [editData, setEditData] = useState('');
+  const [editIsParcelado, setEditIsParcelado] = useState(false);
+  const [editParcelaAtual, setEditParcelaAtual] = useState<number>(1);
+  const [editTotalParcelas, setEditTotalParcelas] = useState<number>(1);
+  const [editCategoriaId, setEditCategoriaId] = useState('');
+
+  const abrirModalEdicao = (item: ImportacaoFaturaItem) => {
+    setItemEmEdicao(item);
+    setEditDescricao(item.descricao);
+    setEditValor(item.valor.toString());
+    setEditData(item.data || new Date().toISOString().split('T')[0]);
+    const isParc = Boolean(item.parcelaAtual && item.totalParcelas && item.totalParcelas > 1);
+    setEditIsParcelado(isParc);
+    setEditParcelaAtual(item.parcelaAtual || 1);
+    setEditTotalParcelas(item.totalParcelas || (isParc ? item.totalParcelas! : 2));
+    setEditCategoriaId(item.categoriaSugeridaId || 'cat_outros');
+  };
+
+  const salvarEdicaoItem = () => {
+    if (!itemEmEdicao) return;
+    const valorNum = parseFloat(editValor);
+    const cat = (categorias || []).find((c) => c.id === editCategoriaId);
+
+    setItensParaImportar((prev) =>
+      prev.map((it) => {
+        if (it.id !== itemEmEdicao.id) return it;
+        return {
+          ...it,
+          descricao: editDescricao.trim() || it.descricao,
+          valor: !isNaN(valorNum) && valorNum > 0 ? valorNum : it.valor,
+          data: editData,
+          parcelaAtual: editIsParcelado ? editParcelaAtual : undefined,
+          totalParcelas: editIsParcelado ? editTotalParcelas : undefined,
+          categoriaSugeridaId: editCategoriaId,
+          categoriaSugeridaNome: cat?.nome || it.categoriaSugeridaNome,
+        };
+      })
+    );
+    setItemEmEdicao(null);
+  };
+
   // Contas a Pagar states
   const [tipoDocumento, setTipoDocumento] = useState<'fatura_cartao' | 'boleto_cobranca'>('fatura_cartao');
+  const [modoLancamentoBoleto, setModoLancamentoBoleto] = useState<'conta_unica' | 'itens_discriminados'>('conta_unica');
   const [criarContaPagar, setCriarContaPagar] = useState(true);
   const [dataVencimentoFatura, setDataVencimentoFatura] = useState<string>(() => {
     const d = new Date();
@@ -326,42 +405,84 @@ export const ImportacaoFaturaView: React.FC<ImportacaoFaturaViewProps> = ({
       }
       
       setResultadoExtracao(data);
-      const itemsList = data.itens || [];
+      const itemsList = (data.itens || []).map((it: any) => {
+        // Garantir que categorias de telecom/serviços não fiquem como Alimentação por engano
+        const descLower = (it.descricao || '').toLowerCase();
+        let catId = it.categoriaSugeridaId;
+        let catNome = it.categoriaSugeridaNome;
+
+        if (descLower.includes('vivo') || descLower.includes('claro') || descLower.includes('tim') || descLower.includes('fibra') || descLower.includes('internet') || descLower.includes('multa') || descLower.includes('juros') || descLower.includes('encargos')) {
+          const catServ = categorias.find(c => c.id === 'cat_servicos' || c.nome.toLowerCase().includes('software') || c.nome.toLowerCase().includes('serviço'));
+          if (catServ) {
+            catId = catServ.id;
+            catNome = catServ.nome;
+          }
+        }
+        return {
+          ...it,
+          categoriaSugeridaId: catId || it.categoriaSugeridaId,
+          categoriaSugeridaNome: catNome || it.categoriaSugeridaNome,
+        };
+      });
       setItensParaImportar(itemsList);
 
-      // Auto-detect destination card based on emissor or text
       const emissorLido = (data.emissor || '').trim();
-      if (emissorLido) {
-        const cartaoExistente = cartoes.find(c => 
-          c.nome.toLowerCase().includes(emissorLido.toLowerCase()) || 
-          emissorLido.toLowerCase().includes(c.nome.toLowerCase())
-        );
-        if (cartaoExistente) {
-          setCartaoSelecionadoId(cartaoExistente.id);
-        } else {
-          setCartaoSelecionadoId(`novo_cartao__${emissorLido}`);
-        }
-      }
+      const emissorLower = emissorLido.toLowerCase();
+      const textoCompleto = itemsList.map((i: any) => (i.descricao || '').toLowerCase()).join(' ');
+
+      const isContaServicoOuBoleto = 
+        data.tipoDocumento === 'boleto_cobranca' || 
+        emissorLower.includes('vivo') || 
+        emissorLower.includes('claro') || 
+        emissorLower.includes('tim') || 
+        emissorLower.includes('oi') || 
+        emissorLower.includes('copel') || 
+        emissorLower.includes('enel') || 
+        emissorLower.includes('sabesp') || 
+        emissorLower.includes('sanepar') || 
+        emissorLower.includes('servopa') || 
+        emissorLower.includes('consórcio') || 
+        emissorLower.includes('consorcio') || 
+        emissorLower.includes('aluguel') || 
+        emissorLower.includes('condom') || 
+        textoCompleto.includes('vivo') || 
+        textoCompleto.includes('fibra 500') || 
+        textoCompleto.includes('servopa');
 
       // Auto-detect document type
-      if (data.tipoDocumento === 'boleto_cobranca') {
+      if (isContaServicoOuBoleto) {
         setTipoDocumento('boleto_cobranca');
-      } else if (itemsList.length === 1) {
-        const itemLower = (itemsList[0]?.descricao || '').toLowerCase();
-        if (itemLower.includes('servopa') || itemLower.includes('consórcio') || itemLower.includes('consorcio') || itemLower.includes('boleto')) {
-          setTipoDocumento('boleto_cobranca');
-        } else {
-          setTipoDocumento('fatura_cartao');
+        setModoLancamentoBoleto('conta_unica');
+        
+        // Auto-select category for service/utility
+        const catServicos = categorias.find(c => c.id === 'cat_servicos' || c.nome.toLowerCase().includes('software') || c.nome.toLowerCase().includes('assinatura') || c.nome.toLowerCase().includes('serviço'));
+        const catMoradia = categorias.find(c => c.id === 'cat_moradia' || c.nome.toLowerCase().includes('moradia'));
+        if (emissorLower.includes('vivo') || emissorLower.includes('claro') || emissorLower.includes('tim') || textoCompleto.includes('fibra')) {
+          if (catServicos) setCategoriaContaPagarId(catServicos.id);
+        } else if (emissorLower.includes('copel') || emissorLower.includes('enel') || emissorLower.includes('sabesp') || emissorLower.includes('condom')) {
+          if (catMoradia) setCategoriaContaPagarId(catMoradia.id);
         }
       } else {
         setTipoDocumento('fatura_cartao');
+        // Auto-detect destination card based on emissor or text
+        if (emissorLido) {
+          const cartaoExistente = cartoes.find(c => 
+            c.nome.toLowerCase().includes(emissorLido.toLowerCase()) || 
+            emissorLido.toLowerCase().includes(c.nome.toLowerCase())
+          );
+          if (cartaoExistente) {
+            setCartaoSelecionadoId(cartaoExistente.id);
+          } else {
+            setCartaoSelecionadoId(`novo_cartao__${emissorLido}`);
+          }
+        }
       }
 
       // Auto pre-populate invoice due date and total
       if (data.dataVencimento) {
         setDataVencimentoFatura(data.dataVencimento);
       }
-      if (data.valorTotal && !isNaN(Number(data.valorTotal))) {
+      if (data.valorTotal && !isNaN(Number(data.valorTotal)) && Number(data.valorTotal) > 0) {
         setValorTotalContaPagar(Number(data.valorTotal).toFixed(2));
       } else {
         const sum = itemsList.reduce((acc: number, it: any) => acc + (Number(it.valor) || 0), 0);
@@ -388,6 +509,18 @@ export const ImportacaoFaturaView: React.FC<ImportacaoFaturaViewProps> = ({
     const cat = (categorias || []).find((c) => c.id === catId);
     setItensParaImportar((prev) =>
       prev.map((it) => (it.id === id ? { ...it, categoriaSugeridaId: catId, categoriaSugeridaNome: cat?.nome } : it))
+    );
+  };
+
+  const handleUpdateItemParcela = (id: string, parcelaAtual?: number, totalParcelas?: number) => {
+    setItensParaImportar((prev) =>
+      prev.map((it) => (it.id === id ? { ...it, parcelaAtual, totalParcelas } : it))
+    );
+  };
+
+  const handleUpdateItemDescricao = (id: string, descricao: string) => {
+    setItensParaImportar((prev) =>
+      prev.map((it) => (it.id === id ? { ...it, descricao } : it))
     );
   };
 
@@ -424,7 +557,8 @@ export const ImportacaoFaturaView: React.FC<ImportacaoFaturaViewProps> = ({
         selecionados,
         {
           tipoDocumento: tipoDocumento,
-          nomeEmissor: resultadoExtracao?.emissor || 'Cartão de Crédito',
+          modoLancamento: modoLancamentoBoleto,
+          nomeEmissor: resultadoExtracao?.emissor || (tipoDocumento === 'boleto_cobranca' ? 'Boleto / Conta' : 'Cartão de Crédito'),
           dataVencimento: dataVencimentoFatura,
           criarContaPagar: criarContaPagar,
           valorTotalFatura: valorFinal,
@@ -773,54 +907,140 @@ export const ImportacaoFaturaView: React.FC<ImportacaoFaturaViewProps> = ({
             {/* CONTAS A PAGAR CONFIGURATION SECTION */}
             {itensParaImportar.length > 0 && (
               <div className="p-3.5 rounded-xl bg-slate-950 border border-teal-500/30 space-y-3 animate-fadeIn">
-                <div className="flex items-center justify-between">
-                  <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-teal-300">
-                    <input
-                      type="checkbox"
-                      checked={criarContaPagar}
-                      onChange={(e) => setCriarContaPagar(e.target.checked)}
-                      className="rounded bg-slate-900 border-slate-700 text-teal-500 focus:ring-0 w-4 h-4 cursor-pointer"
-                    />
-                    <span>Gerar registro em Contas a Pagar (Total da Fatura)</span>
-                  </label>
-                  <span className="text-[11px] font-mono font-bold text-emerald-400">
-                    Total: {formatarMoeda(Number(valorTotalContaPagar) || totalSelecionado)}
-                  </span>
-                </div>
-
-                {criarContaPagar && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-800/80">
-                    <div>
-                      <label className="text-[11px] text-slate-400 block mb-1 flex items-center gap-1.5">
-                        <Calendar className="w-3.5 h-3.5 text-teal-400" />
-                        <span>Data de Vencimento da Fatura:</span>
-                      </label>
-                      <input
-                        type="date"
-                        value={dataVencimentoFatura}
-                        onChange={(e) => setDataVencimentoFatura(e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-700 text-white rounded-lg px-2.5 py-1.5 text-xs font-mono focus:ring-1 focus:ring-teal-500 focus:outline-none"
-                      />
+                {tipoDocumento === 'boleto_cobranca' ? (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-teal-300 flex items-center gap-1.5">
+                        <Receipt className="w-4 h-4 text-teal-400" />
+                        <span>Formato de Lançamento em Contas a Pagar:</span>
+                      </span>
+                      <span className="text-[11px] font-mono font-bold text-emerald-400">
+                        Total: {formatarMoeda(Number(valorTotalContaPagar) || totalSelecionado)}
+                      </span>
                     </div>
 
-                    <div>
-                      <label className="text-[11px] text-slate-400 block mb-1 flex items-center gap-1.5">
-                        <DollarSign className="w-3.5 h-3.5 text-emerald-400" />
-                        <span>Valor Total da Conta a Pagar:</span>
-                      </label>
-                      <div className="relative">
-                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-500">R$</span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setModoLancamentoBoleto('conta_unica')}
+                        className={`p-2.5 rounded-xl text-left border transition-all cursor-pointer ${
+                          modoLancamentoBoleto === 'conta_unica'
+                            ? 'bg-teal-500/20 text-teal-200 border-teal-500/50'
+                            : 'bg-slate-900/60 text-slate-400 border-slate-800 hover:text-slate-300'
+                        }`}
+                      >
+                        <div className="font-semibold text-xs flex items-center gap-1.5">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-teal-400 shrink-0" />
+                          <span>Conta Única (Valor Total)</span>
+                        </div>
+                        <p className="text-[10px] text-slate-400 mt-1">
+                          Lança 1 despesa com o valor total (R$ {Number(valorTotalContaPagar || totalSelecionado).toFixed(2)}) e salva o detalhamento nas observações.
+                        </p>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setModoLancamentoBoleto('itens_discriminados')}
+                        className={`p-2.5 rounded-xl text-left border transition-all cursor-pointer ${
+                          modoLancamentoBoleto === 'itens_discriminados'
+                            ? 'bg-teal-500/20 text-teal-200 border-teal-500/50'
+                            : 'bg-slate-900/60 text-slate-400 border-slate-800 hover:text-slate-300'
+                        }`}
+                      >
+                        <div className="font-semibold text-xs flex items-center gap-1.5">
+                          <Layers className="w-3.5 h-3.5 text-teal-400 shrink-0" />
+                          <span>Lançar Itens Discriminados</span>
+                        </div>
+                        <p className="text-[10px] text-slate-400 mt-1">
+                          Lança {itensParaImportar.filter(i => i.selecionado).length} contas a pagar separadas para cada item identificado.
+                        </p>
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-800/80">
+                      <div>
+                        <label className="text-[11px] text-slate-400 block mb-1 flex items-center gap-1.5">
+                          <Calendar className="w-3.5 h-3.5 text-teal-400" />
+                          <span>Vencimento do Boleto:</span>
+                        </label>
                         <input
-                          type="number"
-                          step="0.01"
-                          value={valorTotalContaPagar}
-                          onChange={(e) => setValorTotalContaPagar(e.target.value)}
-                          placeholder={(totalSelecionado).toFixed(2)}
-                          className="w-full pl-8 pr-2.5 py-1.5 bg-slate-900 border border-slate-700 text-white rounded-lg text-xs font-mono font-bold focus:ring-1 focus:ring-teal-500 focus:outline-none"
+                          type="date"
+                          value={dataVencimentoFatura}
+                          onChange={(e) => setDataVencimentoFatura(e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-700 text-white rounded-lg px-2.5 py-1.5 text-xs font-mono focus:ring-1 focus:ring-teal-500 focus:outline-none"
                         />
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] text-slate-400 block mb-1 flex items-center gap-1.5">
+                          <Tag className="w-3.5 h-3.5 text-indigo-400" />
+                          <span>Categoria da Despesa:</span>
+                        </label>
+                        <select
+                          value={categoriaContaPagarId}
+                          onChange={(e) => setCategoriaContaPagarId(e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-700 text-white rounded-lg px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-teal-500 focus:outline-none cursor-pointer"
+                        >
+                          <option value="">Automática (Sugerida pela IA)</option>
+                          {(categorias || []).filter(c => c.tipo === 'despesa').map(c => (
+                            <option key={c.id} value={c.id}>{c.nome}</option>
+                          ))}
+                        </select>
                       </div>
                     </div>
                   </div>
+                ) : (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-teal-300">
+                        <input
+                          type="checkbox"
+                          checked={criarContaPagar}
+                          onChange={(e) => setCriarContaPagar(e.target.checked)}
+                          className="rounded bg-slate-900 border-slate-700 text-teal-500 focus:ring-0 w-4 h-4 cursor-pointer"
+                        />
+                        <span>Gerar registro em Contas a Pagar (Total da Fatura)</span>
+                      </label>
+                      <span className="text-[11px] font-mono font-bold text-emerald-400">
+                        Total: {formatarMoeda(Number(valorTotalContaPagar) || totalSelecionado)}
+                      </span>
+                    </div>
+
+                    {criarContaPagar && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-800/80">
+                        <div>
+                          <label className="text-[11px] text-slate-400 block mb-1 flex items-center gap-1.5">
+                            <Calendar className="w-3.5 h-3.5 text-teal-400" />
+                            <span>Data de Vencimento da Fatura:</span>
+                          </label>
+                          <input
+                            type="date"
+                            value={dataVencimentoFatura}
+                            onChange={(e) => setDataVencimentoFatura(e.target.value)}
+                            className="w-full bg-slate-900 border border-slate-700 text-white rounded-lg px-2.5 py-1.5 text-xs font-mono focus:ring-1 focus:ring-teal-500 focus:outline-none"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="text-[11px] text-slate-400 block mb-1 flex items-center gap-1.5">
+                            <DollarSign className="w-3.5 h-3.5 text-emerald-400" />
+                            <span>Valor Total da Conta a Pagar:</span>
+                          </label>
+                          <div className="relative">
+                            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-500">R$</span>
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={valorTotalContaPagar}
+                              onChange={(e) => setValorTotalContaPagar(e.target.value)}
+                              placeholder={(totalSelecionado).toFixed(2)}
+                              className="w-full pl-8 pr-2.5 py-1.5 bg-slate-900 border border-slate-700 text-white rounded-lg text-xs font-mono font-bold focus:ring-1 focus:ring-teal-500 focus:outline-none"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             )}
@@ -845,53 +1065,117 @@ export const ImportacaoFaturaView: React.FC<ImportacaoFaturaViewProps> = ({
                 </p>
               </div>
             ) : (
-              <div className="divide-y divide-slate-800/80 space-y-1">
-                {itensParaImportar.map((item) => (
-                  <div 
-                    key={item.id} 
-                    className={`p-3 rounded-xl flex items-center justify-between gap-3 transition-colors ${
-                      item.selecionado ? 'bg-slate-950/80 border border-slate-800' : 'opacity-40 bg-slate-950/30'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <input
-                        type="checkbox"
-                        checked={item.selecionado}
-                        onChange={() => toggleSelecionarItem(item.id)}
-                        className="rounded bg-slate-900 border-slate-700 text-teal-500 focus:ring-0 cursor-pointer w-4 h-4"
-                      />
-                      <div className="min-w-0">
-                        <div className="font-semibold text-white text-xs truncate flex items-center gap-1.5">
-                          <span>{item.descricao}</span>
-                          {item.parcelaAtual && (
-                            <span className="text-[10px] px-1.5 py-0.2 rounded bg-indigo-500/20 text-indigo-300 font-mono">
-                              {item.parcelaAtual}/{item.totalParcelas}
+              <div className="divide-y divide-slate-800/80 space-y-2">
+                {itensParaImportar.map((item) => {
+                  const isParcelado = Boolean(item.parcelaAtual && item.totalParcelas && item.totalParcelas > 1);
+                  return (
+                    <div 
+                      key={item.id} 
+                      className={`p-3.5 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-all ${
+                        item.selecionado ? 'bg-slate-950/90 border border-slate-800 shadow-sm' : 'opacity-40 bg-slate-950/30'
+                      }`}
+                    >
+                      <div className="flex items-start gap-3 min-w-0 flex-1">
+                        <input
+                          type="checkbox"
+                          checked={item.selecionado}
+                          onChange={() => toggleSelecionarItem(item.id)}
+                          className="rounded bg-slate-900 border-slate-700 text-teal-500 focus:ring-0 cursor-pointer w-5 h-5 shrink-0 mt-0.5"
+                        />
+                        <div className="min-w-0 flex-1 space-y-1.5">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-semibold text-white text-xs sm:text-sm">{item.descricao}</span>
+                            
+                            {/* Visual Badge */}
+                            {isParcelado ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-500/20 border border-indigo-500/40 text-indigo-300 text-xs font-bold font-mono">
+                                <Layers className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                                <span>{String(item.parcelaAtual).padStart(2, '0')}/{String(item.totalParcelas).padStart(2, '0')}</span>
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-800/70 border border-slate-700 text-slate-400 text-[11px] font-medium">
+                                À vista
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Controls Row: Date, Category and Quick Parcel Stepper */}
+                          <div className="flex flex-wrap items-center gap-2.5 pt-0.5 text-xs text-slate-400">
+                            <span className="font-mono bg-slate-900 px-2 py-0.5 rounded text-[11px] border border-slate-800">
+                              {item.data ? item.data.split('-').reverse().join('/') : '-'}
                             </span>
-                          )}
-                        </div>
-                        <div className="text-[11px] text-slate-400 flex items-center gap-2 mt-0.5">
-                          <span className="font-mono">{item.data ? item.data.split('-').reverse().join('/') : '-'}</span>
-                          <span>•</span>
-                          <select
-                            value={item.categoriaSugeridaId}
-                            onChange={(e) => handleUpdateItemCategoria(item.id, e.target.value)}
-                            className="bg-slate-900 text-slate-300 text-[10px] px-2 py-0.5 rounded border border-slate-700 focus:outline-none cursor-pointer"
-                          >
-                            {(categorias || []).filter(c => c.tipo === 'despesa').map((cat) => (
-                              <option key={cat.id} value={cat.id}>
-                                {cat.nome}
-                              </option>
-                            ))}
-                          </select>
+
+                            {/* Parcel Quick Stepper (Wide and Clear) */}
+                            <div className="inline-flex items-center gap-1.5 bg-slate-900/90 border border-indigo-500/30 rounded-lg px-2 py-1">
+                              <span className="text-[11px] font-medium text-indigo-300">Parc:</span>
+                              <input
+                                type="number"
+                                min="1"
+                                max="72"
+                                value={item.parcelaAtual || ''}
+                                onChange={(e) => {
+                                  const val = e.target.value ? parseInt(e.target.value, 10) : undefined;
+                                  handleUpdateItemParcela(item.id, val, item.totalParcelas || (val ? val : undefined));
+                                }}
+                                placeholder="-"
+                                className="w-9 h-6 bg-slate-950 border border-slate-700 text-center rounded text-xs font-bold text-white focus:outline-none focus:border-indigo-400 font-mono"
+                                title="Parcela Atual (ex: 6)"
+                              />
+                              <span className="text-slate-500 font-bold text-xs">/</span>
+                              <input
+                                type="number"
+                                min="1"
+                                max="72"
+                                value={item.totalParcelas || ''}
+                                onChange={(e) => {
+                                  const val = e.target.value ? parseInt(e.target.value, 10) : undefined;
+                                  handleUpdateItemParcela(item.id, item.parcelaAtual, val);
+                                }}
+                                placeholder="-"
+                                className="w-9 h-6 bg-slate-950 border border-slate-700 text-center rounded text-xs font-bold text-white focus:outline-none focus:border-indigo-400 font-mono"
+                                title="Total de Parcelas (ex: 6)"
+                              />
+                            </div>
+
+                            {/* Category selector */}
+                            <select
+                              value={item.categoriaSugeridaId}
+                              onChange={(e) => handleUpdateItemCategoria(item.id, e.target.value)}
+                              className="bg-slate-900 text-slate-300 text-xs px-2.5 py-1 rounded-lg border border-slate-700 focus:outline-none cursor-pointer"
+                            >
+                              {(categorias || []).filter(c => c.tipo === 'despesa').map((cat) => (
+                                <option key={cat.id} value={cat.id}>
+                                  {cat.nome}
+                                </option>
+                              ))}
+                            </select>
+
+                            {/* Edit Button */}
+                            <button
+                              type="button"
+                              onClick={() => abrirModalEdicao(item)}
+                              className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors cursor-pointer"
+                              title="Editar detalhes completos do lançamento"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </div>
                       </div>
-                    </div>
 
-                    <div className="text-right shrink-0 font-mono font-bold text-xs text-rose-400">
-                      - {formatarMoeda(item.valor)}
+                      <div className="text-right shrink-0 flex sm:flex-col items-center sm:items-end justify-between sm:justify-center border-t sm:border-t-0 pt-2 sm:pt-0 border-slate-800/60">
+                        <div className="font-mono font-bold text-sm sm:text-base text-rose-400">
+                          - {formatarMoeda(item.valor)}
+                        </div>
+                        {isParcelado && (
+                          <div className="text-[10px] font-mono text-indigo-400">
+                            {item.parcelaAtual}ª de {item.totalParcelas}x
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -961,6 +1245,234 @@ export const ImportacaoFaturaView: React.FC<ImportacaoFaturaViewProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Modal de Edição Detalhada de Lançamento e Parcelamento */}
+      {itemEmEdicao && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-fadeIn">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 max-w-lg w-full shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <Edit2 className="w-5 h-5 text-indigo-400" />
+                <h3 className="text-base font-bold text-white">Editar Compra / Parcela</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setItemEmEdicao(null)}
+                className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3.5">
+              {/* Descrição */}
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1">
+                  Descrição / Estabelecimento
+                </label>
+                <input
+                  type="text"
+                  value={editDescricao}
+                  onChange={(e) => setEditDescricao(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:border-indigo-400"
+                />
+              </div>
+
+              {/* Valor e Data */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-300 mb-1">
+                    Valor (R$)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={editValor}
+                    onChange={(e) => setEditValor(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-white text-sm font-mono font-bold focus:outline-none focus:border-indigo-400"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-300 mb-1">
+                    Data da Transação
+                  </label>
+                  <input
+                    type="date"
+                    value={editData}
+                    onChange={(e) => setEditData(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:border-indigo-400"
+                  />
+                </div>
+              </div>
+
+              {/* Seção de Parcelamento */}
+              <div className="p-3.5 rounded-xl bg-slate-950 border border-indigo-500/30 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-indigo-300 flex items-center gap-1.5">
+                    <Layers className="w-4 h-4 text-indigo-400" />
+                    Condição de Pagamento
+                  </span>
+                  
+                  {/* Toggle à vista / parcelado */}
+                  <div className="flex items-center gap-1 bg-slate-900 p-1 rounded-lg border border-slate-800">
+                    <button
+                      type="button"
+                      onClick={() => setEditIsParcelado(false)}
+                      className={`px-2.5 py-1 rounded text-xs font-semibold transition-colors cursor-pointer ${
+                        !editIsParcelado ? 'bg-slate-700 text-white shadow' : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      À Vista
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditIsParcelado(true);
+                        if (editTotalParcelas <= 1) setEditTotalParcelas(2);
+                      }}
+                      className={`px-2.5 py-1 rounded text-xs font-semibold transition-colors cursor-pointer ${
+                        editIsParcelado ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      Parcelado
+                    </button>
+                  </div>
+                </div>
+
+                {editIsParcelado && (
+                  <div className="space-y-3 pt-2 border-t border-slate-800 animate-fadeIn">
+                    {/* Botões rápidos de total de parcelas */}
+                    <div>
+                      <span className="block text-[11px] text-slate-400 mb-1.5">Total de parcelas rápido:</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {[2, 3, 4, 5, 6, 8, 10, 12, 18, 24].map((n) => (
+                          <button
+                            key={n}
+                            type="button"
+                            onClick={() => {
+                              setEditTotalParcelas(n);
+                              if (editParcelaAtual > n) setEditParcelaAtual(n);
+                            }}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                              editTotalParcelas === n
+                                ? 'bg-indigo-500 text-slate-950'
+                                : 'bg-slate-900 border border-slate-800 text-slate-300 hover:border-indigo-400'
+                            }`}
+                          >
+                            {n}x
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Inputs manuais com steppers grandes */}
+                    <div className="grid grid-cols-2 gap-3 pt-1">
+                      <div>
+                        <label className="block text-[11px] text-slate-400 mb-1">
+                          Parcela Atual nesta fatura:
+                        </label>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setEditParcelaAtual(prev => Math.max(1, prev - 1))}
+                            className="p-2 rounded-lg bg-slate-900 border border-slate-700 text-white hover:bg-slate-800 cursor-pointer"
+                          >
+                            <Minus className="w-3.5 h-3.5" />
+                          </button>
+                          <input
+                            type="number"
+                            min="1"
+                            max={editTotalParcelas}
+                            value={editParcelaAtual}
+                            onChange={(e) => setEditParcelaAtual(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                            className="w-full text-center py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-white font-mono font-bold text-sm"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setEditParcelaAtual(prev => Math.min(editTotalParcelas, prev + 1))}
+                            className="p-2 rounded-lg bg-slate-900 border border-slate-700 text-white hover:bg-slate-800 cursor-pointer"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] text-slate-400 mb-1">
+                          Total Geral de Parcelas:
+                        </label>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setEditTotalParcelas(prev => Math.max(2, prev - 1))}
+                            className="p-2 rounded-lg bg-slate-900 border border-slate-700 text-white hover:bg-slate-800 cursor-pointer"
+                          >
+                            <Minus className="w-3.5 h-3.5" />
+                          </button>
+                          <input
+                            type="number"
+                            min="2"
+                            max="72"
+                            value={editTotalParcelas}
+                            onChange={(e) => setEditTotalParcelas(Math.max(2, parseInt(e.target.value, 10) || 2))}
+                            className="w-full text-center py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-white font-mono font-bold text-sm"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setEditTotalParcelas(prev => prev + 1)}
+                            className="p-2 rounded-lg bg-slate-900 border border-slate-700 text-white hover:bg-slate-800 cursor-pointer"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <p className="text-[11px] text-indigo-300/80 bg-indigo-500/10 p-2 rounded-lg border border-indigo-500/20">
+                      💡 <b>Identificação:</b> Compra registrada como parcela <b>{editParcelaAtual} de {editTotalParcelas}</b>.
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Categoria */}
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1">
+                  Categoria
+                </label>
+                <select
+                  value={editCategoriaId}
+                  onChange={(e) => setEditCategoriaId(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:border-indigo-400 cursor-pointer"
+                >
+                  {(categorias || []).filter(c => c.tipo === 'despesa').map((cat) => (
+                    <option key={cat.id} value={cat.id}>
+                      {cat.nome}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setItemEmEdicao(null)}
+                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={salvarEdicaoItem}
+                className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-lg shadow-indigo-950/50 transition-colors cursor-pointer"
+              >
+                Salvar Alterações
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

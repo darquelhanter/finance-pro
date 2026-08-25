@@ -14,7 +14,10 @@ import {
   Calendar, 
   CheckCircle2, 
   AlertCircle,
-  X
+  X,
+  Layers,
+  Sparkles,
+  ArrowRight
 } from 'lucide-react';
 import { Conta, CartaoCredito } from '../types';
 import { formatarMoeda } from '../utils/format';
@@ -24,6 +27,7 @@ interface ContasCartoesViewProps {
   cartoes?: CartaoCredito[];
   onCriarConta: (conta: any) => void;
   onCriarCartao: (cartao: any) => void;
+  onNavigateTab?: (tab: string) => void;
 }
 
 export const ContasCartoesView: React.FC<ContasCartoesViewProps> = ({
@@ -31,6 +35,7 @@ export const ContasCartoesView: React.FC<ContasCartoesViewProps> = ({
   cartoes = [],
   onCriarConta,
   onCriarCartao,
+  onNavigateTab,
 }) => {
   const [modalContaAberto, setModalContaAberto] = useState(false);
   const [modalCartaoAberto, setModalCartaoAberto] = useState(false);
@@ -161,6 +166,34 @@ export const ContasCartoesView: React.FC<ContasCartoesViewProps> = ({
             <span>Adicionar Cartão</span>
           </button>
         </div>
+
+        {/* Banner de Acesso à Análise de Parcelamentos & Faturas Futuras */}
+        {onNavigateTab && (
+          <div className="mb-6 p-4 rounded-2xl bg-gradient-to-r from-indigo-950/60 via-slate-900 to-purple-950/60 border border-indigo-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-indigo-500/20 text-indigo-300 flex items-center justify-center border border-indigo-500/30 shrink-0">
+                <Layers className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                  Projeção de Faturas Futuras & Dívidas Parceladas
+                  <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300">Novo</span>
+                </h4>
+                <p className="text-xs text-slate-300">
+                  Saiba quando os parcelamentos terminam e quanto de limite/orçamento será liberado mês a mês (sem duplicar suas despesas atuais).
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => onNavigateTab('faturas_parcelamentos')}
+              className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shrink-0 flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md shadow-indigo-950"
+            >
+              <span>Abrir Painel de Parcelamentos</span>
+              <ArrowRight className="w-4 h-4" />
+            </button>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {cartoes.map((cartao) => {

@@ -18,7 +18,8 @@ import {
   User as UserIcon,
   ChevronDown,
   Smartphone,
-  Tags
+  Tags,
+  Layers
 } from 'lucide-react';
 import { formatarMoeda } from '../utils/format';
 import { useAuth } from '../context/AuthContext';
@@ -46,6 +47,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   const tabs = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'lancamentos', label: 'Lançamentos', icon: ArrowLeftRight },
+    { id: 'faturas_parcelamentos', label: 'Faturas & Parcelas', icon: Layers },
     { id: 'contas_cartoes', label: 'Contas & Cartões', icon: CreditCard },
     { id: 'importacao_ia', label: 'Importação IA', icon: Sparkles, highlight: true },
     { id: 'orcamentos', label: 'Orçamentos', icon: PieChart },

@@ -16,7 +16,9 @@ import {
   CheckCircle2, 
   AlertCircle,
   PlusCircle,
-  Clock
+  Clock,
+  Layers,
+  ArrowRight
 } from 'lucide-react';
 import { 
   ResponsiveContainer, 
@@ -158,20 +160,27 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
 
         {/* Card 4: Faturas / Balanço */}
-        <div id="kpi-faturas-abertas" className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800 hover:border-slate-700 transition-all flex flex-col justify-between">
+        <div 
+          id="kpi-faturas-abertas" 
+          onClick={() => onNavigateTab('faturas_parcelamentos')}
+          className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800 hover:border-indigo-500/50 hover:bg-slate-900 transition-all flex flex-col justify-between cursor-pointer group shadow-sm"
+        >
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-medium text-slate-400">Faturas em Aberto</span>
-            <div className="w-8 h-8 rounded-lg bg-indigo-500/10 flex items-center justify-center text-indigo-400">
-              <CreditCard className="w-4 h-4" />
+            <span className="text-xs font-medium text-slate-400 group-hover:text-indigo-300 transition-colors">Faturas em Aberto & Dívidas</span>
+            <div className="w-8 h-8 rounded-lg bg-indigo-500/10 group-hover:bg-indigo-500/20 flex items-center justify-center text-indigo-400 transition-colors">
+              <Layers className="w-4 h-4" />
             </div>
           </div>
           <div>
             <div className="text-2xl font-bold text-indigo-300 tracking-tight">
               {formatarMoeda(resumo?.faturasAbertasTotal)}
             </div>
-            <p className="text-xs text-slate-400 mt-1 flex items-center gap-1">
-              <span className="text-indigo-400 font-medium">{cartoes.length} cartões</span> gerenciados
-            </p>
+            <div className="text-xs text-slate-400 mt-1 flex items-center justify-between">
+              <span className="text-indigo-400 font-medium">{cartoes.length} cartões</span>
+              <span className="text-[11px] text-indigo-400/80 group-hover:text-indigo-300 flex items-center gap-0.5">
+                Ver Projeção <ArrowRight className="w-3 h-3" />
+              </span>
+            </div>
           </div>
         </div>
       </div>
