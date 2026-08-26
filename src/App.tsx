@@ -1219,49 +1219,49 @@ export function App() {
       const dataItem = item.data || new Date().toISOString().split('T')[0];
       const descItem = item.descricao.trim();
 
-      // Evita duplicar se já existir exatamente o mesmo lançamento no mesmo cartão
-      const jaExiste = lancamentos.some(
-        l => l.cartaoId === targetCartaoId && 
-             l.descricao.trim().toLowerCase() === descItem.toLowerCase() && 
-             l.valor === valorItem && 
-             (l.dataCompetencia === dataItem || l.dataVencimento === dataItem)
-      );
-
-      if (jaExiste) continue;
-
       const infoParc = ParcelamentoService.extrairInfoDescricao(descItem);
       const numParc = item.parcelaAtual || infoParc.parcelaAtual;
       const totParc = item.totalParcelas || infoParc.totalParcelas;
       const descLimpa = infoParc.descricaoBase || descItem;
 
-      const novoId = `lanc_imp_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+      // Procura se já existe exatamente o mesmo lançamento no mesmo cartão
+      const lancamentoExistente = lancamentos.find(
+        l => l.cartaoId === targetCartaoId && 
+             (l.descricao.trim().toLowerCase() === descItem.toLowerCase() || l.descricao.trim().toLowerCase().includes(descLimpa.toLowerCase())) && 
+             Math.abs(l.valor - valorItem) < 0.01 && 
+             (l.dataCompetencia === dataItem || l.dataVencimento === dataItem)
+      );
+
+      const novoId = lancamentoExistente?.id || `lanc_imp_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+      
       const lanc: Lancamento = {
         id: novoId,
         tipo: 'despesa',
         descricao: descItem,
         valor: valorItem,
-        categoriaId: item.categoriaSugeridaId || (categorias[0]?.id || 'cat_outros'),
+        categoriaId: item.categoriaSugeridaId || lancamentoExistente?.categoriaId || (categorias[0]?.id || 'cat_outros'),
         cartaoId: targetCartaoId,
         faturaId: faturaId || 'fat_atual',
         dataCompetencia: dataItem,
         dataVencimento: dataItem,
         // Se gera a Conta a Pagar consolidada, a compra individual no cartão é marcada como 'pago' (já autorizada no cartão)
         // e como apenasVisualizacao para não duplicar na soma do dashboard e contas a pagar
-        status: deveCriarContaPagar ? 'pago' : 'pendente',
+        status: deveCriarContaPagar ? 'pago' : (lancamentoExistente?.status || 'pendente'),
         apenasVisualizacao: deveCriarContaPagar,
         parcela: numParc && totParc && totParc > 1 ? {
           numero: numParc,
           total: totParc,
           lancamentoPaiId: `imp_parc_${descLimpa.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${targetCartaoId}_${totParc}`,
-        } : undefined,
-        tags: [
+        } : lancamentoExistente?.parcela,
+        tags: Array.from(new Set([
+          ...(lancamentoExistente?.tags || []),
           'item_fatura', 
           'detalhamento_cartao', 
           'extrato_cartao',
           ...(numParc && totParc && totParc > 1 ? ['parcelamento', `parc_${numParc}_${totParc}`] : [])
-        ],
+        ])),
         observacoes: `Compra da fatura ${nomeFinalCartao} (visualização no extrato)${numParc && totParc ? ` - Parcela ${numParc}/${totParc}` : ''}`.trim(),
-        criadoEm: new Date().toISOString(),
+        criadoEm: lancamentoExistente?.criadoEm || new Date().toISOString(),
         atualizadoEm: new Date().toISOString(),
       };
       await salvarLancamento(user.uid, lanc);

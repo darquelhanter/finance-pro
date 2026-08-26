@@ -191,13 +191,15 @@ export class ParcelamentoService {
     for (const lanc of lancamentosRelevantes) {
       let chaveGrupo = '';
 
+      const { descricaoBase, parcelaAtual, totalParcelas } = this.extrairInfoDescricao(lanc.descricao);
+      const numParc = lanc.parcela?.numero || parcelaAtual;
+      const totParc = lanc.parcela?.total || totalParcelas;
+      const nomeLimpo = (descricaoBase || lanc.descricao).toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_').trim();
+
       if (lanc.parcela?.lancamentoPaiId) {
         chaveGrupo = `pai_${lanc.parcela.lancamentoPaiId}`;
-      } else {
-        const { descricaoBase, parcelaAtual, totalParcelas } = this.extrairInfoDescricao(lanc.descricao);
-        if (totalParcelas && totalParcelas > 1) {
-          chaveGrupo = `desc_${descricaoBase.toLowerCase()}_${lanc.cartaoId || 'sem_cartao'}_${totalParcelas}`;
-        }
+      } else if (totParc && totParc > 1) {
+        chaveGrupo = `parc_${nomeLimpo}_${lanc.cartaoId || 'geral'}_${totParc}`;
       }
 
       if (chaveGrupo) {
@@ -239,10 +241,16 @@ export class ParcelamentoService {
       const valorTotalOriginal = valorParcela * totalParcelasDetectado;
 
       // O número de parcela mais recente que o usuário já alcançou/faturou nesta fatura ou no banco (ex: 04/04 -> 4, 05/05 -> 5, 02/06 -> 2)
-      const maxParcelaRegistrada = itens.reduce((max, i) => {
-        const num = i.parcela?.numero || this.extrairInfoDescricao(i.descricao).parcelaAtual || 0;
-        return Math.max(max, num);
-      }, 0);
+      let maxParcelaRegistrada = 0;
+      let itemMaisRecente = itens[0];
+
+      for (const it of itens) {
+        const num = it.parcela?.numero || this.extrairInfoDescricao(it.descricao).parcelaAtual || 1;
+        if (num >= maxParcelaRegistrada) {
+          maxParcelaRegistrada = num;
+          itemMaisRecente = it;
+        }
+      }
 
       const parcelasPagasCount = itens.filter((i) => i.status === 'pago').length;
       
@@ -255,17 +263,13 @@ export class ParcelamentoService {
       const restantes = Math.max(0, totalParcelasDetectado - pagas);
       const saldoDevedor = restantes * valorParcela;
 
-      const proximoPendente = itens.find((i) => i.status === 'pendente') || itens[itens.length - 1];
-      const proximaData = proximoPendente?.dataVencimento || primeiro.dataVencimento;
+      const dataRef = itemMaisRecente.dataVencimento || itemMaisRecente.dataCompetencia || hoje.toISOString().split('T')[0];
+      let dataTermino = dataRef;
 
-      // Calcular data de término
-      const ultimoItem = itens[itens.length - 1];
-      let dataTermino = ultimoItem.dataVencimento;
-      
-      // Se nem todas as parcelas futuras estão geradas no banco, projeta a data final
-      if (itens.length < totalParcelasDetectado && proximaData && restantes > 0) {
-        const [a, m, d] = proximaData.split('-').map(Number);
-        const dataProjetada = new Date(a, m - 1 + restantes - 1, d || 10);
+      // Projeta a data final de quitação com base no número de parcelas restantes
+      if (restantes > 0 && dataRef) {
+        const [a, m, d] = dataRef.split('-').map(Number);
+        const dataProjetada = new Date(a, m - 1 + restantes, d || 10);
         dataTermino = dataProjetada.toISOString().split('T')[0];
       }
 
@@ -293,7 +297,7 @@ export class ParcelamentoService {
         parcelasPagas: pagas,
         parcelasRestantes: restantes,
         saldoDevedor,
-        proximaData,
+        proximaData: dataRef,
         dataTermino,
         mesTerminoFormatado,
         mesesAteTermino: Math.max(0, mesesAteTermino),
@@ -335,9 +339,10 @@ export class ParcelamentoService {
 
       const itensDoMes: ProjecaoMesFuturo['itens'] = [];
       const itensFinalizando: ProjecaoMesFuturo['itensFinalizando'] = [];
+      const idsProcessados = new Set<string>();
 
       // 1. Procura lançamentos específicos já salvos no banco para este mês
-      const lancamentosBanco = lancamentos.filter((l) => {
+      const lancamentosBanco = (lancamentos || []).filter((l) => {
         if (l.status === 'cancelado') return false;
         if (l.tipo !== 'despesa') return false;
         if (cartaoIdFiltro && l.cartaoId !== cartaoIdFiltro) return false;
@@ -347,8 +352,6 @@ export class ParcelamentoService {
         const [la, lm] = dataRef.split('-').map(Number);
         return la === y && lm === m;
       });
-
-      const idsProcessados = new Set<string>();
 
       for (const lb of lancamentosBanco) {
         const { descricaoBase, parcelaAtual, totalParcelas } = this.extrairInfoDescricao(lb.descricao);
@@ -383,38 +386,56 @@ export class ParcelamentoService {
       // nós projetamos matematicamente com base no plano de parcelas
       for (const grupo of comprasAgrupadas) {
         if (grupo.concluida) continue;
-        if (cartaoIdFiltro && grupo.cartaoId !== cartaoIdFiltro) return;
+        if (cartaoIdFiltro && grupo.cartaoId !== cartaoIdFiltro) continue;
 
-        // Verifica se já tem algum item desse grupo processado pelo banco neste mês
+        // Verifica se já tem algum item desse grupo processado pelo banco neste mês específico
         const jaTemNoBanco = grupo.itens.some((it) => idsProcessados.has(it.id));
         if (jaTemNoBanco) continue;
 
-        // Verifica se o mês atual da iteração cai dentro do período restante do parcelamento
-        if (grupo.proximaData) {
-          const [pa, pm] = grupo.proximaData.split('-').map(Number);
-          const indiceMesDesdeProximo = (y - pa) * 12 + (m - pm);
+        // Projeta as parcelas futuras restantes a partir da data de referência do último lançamento faturado
+        if (grupo.itens.length > 0 && grupo.parcelasRestantes > 0) {
+          let itemUltimo = grupo.itens[0];
+          let maxParcNum = 1;
+          for (const it of grupo.itens) {
+            const num = it.parcela?.numero || this.extrairInfoDescricao(it.descricao).parcelaAtual || 1;
+            if (num >= maxParcNum) {
+              maxParcNum = num;
+              itemUltimo = it;
+            }
+          }
 
-          if (indiceMesDesdeProximo >= 0 && indiceMesDesdeProximo < grupo.parcelasRestantes) {
-            const numParcelaProjetada = grupo.totalParcelas - grupo.parcelasRestantes + 1 + indiceMesDesdeProximo;
-            const isUltima = numParcelaProjetada === grupo.totalParcelas;
+          const dataRef = itemUltimo.dataVencimento || itemUltimo.dataCompetencia || hoje.toISOString().split('T')[0];
+          const [anoRef, mesRef] = dataRef.split('-').map(Number);
 
-            itensDoMes.push({
-              descricao: `${grupo.descricaoBase} (${numParcelaProjetada}/${grupo.totalParcelas})`,
-              valor: grupo.valorParcela,
-              numeroParcela: numParcelaProjetada,
-              totalParcelas: grupo.totalParcelas,
-              cartaoId: grupo.cartaoId,
-              categoriaId: grupo.categoriaId,
-              isUltimaParcela: isUltima,
-              compraPaiId: grupo.id,
-            });
+          // Diferença em meses entre o mês analisado (y, m) e o mês da última parcela registrada (anoRef, mesRef)
+          const deltaMeses = (y - anoRef) * 12 + (m - mesRef);
 
-            if (isUltima) {
-              itensFinalizando.push({
-                descricao: grupo.descricaoBase,
-                valorLiberado: grupo.valorParcela,
+          // Se este mês da projeção está no futuro em relação à última parcela faturada
+          if (deltaMeses > 0) {
+            const numParcelaProjetada = maxParcNum + deltaMeses;
+
+            // Se a parcela projetada não ultrapassa o total de parcelas do contrato
+            if (numParcelaProjetada <= grupo.totalParcelas) {
+              const isUltima = numParcelaProjetada === grupo.totalParcelas;
+
+              itensDoMes.push({
+                descricao: `${grupo.descricaoBase} (${String(numParcelaProjetada).padStart(2, '0')}/${String(grupo.totalParcelas).padStart(2, '0')})`,
+                valor: grupo.valorParcela,
+                numeroParcela: numParcelaProjetada,
+                totalParcelas: grupo.totalParcelas,
                 cartaoId: grupo.cartaoId,
+                categoriaId: grupo.categoriaId,
+                isUltimaParcela: isUltima,
+                compraPaiId: grupo.id,
               });
+
+              if (isUltima) {
+                itensFinalizando.push({
+                  descricao: grupo.descricaoBase,
+                  valorLiberado: grupo.valorParcela,
+                  cartaoId: grupo.cartaoId,
+                });
+              }
             }
           }
         }

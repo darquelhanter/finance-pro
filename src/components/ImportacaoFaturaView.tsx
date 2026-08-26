@@ -1186,16 +1186,25 @@ export const ImportacaoFaturaView: React.FC<ImportacaoFaturaViewProps> = ({
               <span className="flex items-center gap-2 font-medium">
                 <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
                 <span>
-                  Lançamentos importados e <b>Conta a Pagar criada com vencimento em {dataVencimentoFatura.split('-').reverse().join('/')}</b>!
+                  Lançamentos e parcelamentos importados com sucesso! Conta a Pagar gerada para <b>{dataVencimentoFatura.split('-').reverse().join('/')}</b>.
                 </span>
               </span>
-              <button 
-                type="button"
-                onClick={() => onNavigateTab('lancamentos')}
-                className="px-3.5 py-1.5 rounded-lg bg-emerald-500 text-slate-950 font-bold hover:bg-emerald-400 transition-colors cursor-pointer shrink-0"
-              >
-                Ver em Contas a Pagar
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                <button 
+                  type="button"
+                  onClick={() => onNavigateTab('faturas_parcelamentos')}
+                  className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white font-bold hover:bg-indigo-500 transition-colors cursor-pointer"
+                >
+                  Ver Faturas & Parcelas
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => onNavigateTab('lancamentos')}
+                  className="px-3 py-1.5 rounded-lg bg-emerald-500 text-slate-950 font-bold hover:bg-emerald-400 transition-colors cursor-pointer"
+                >
+                  Contas a Pagar
+                </button>
+              </div>
             </div>
           )}
 
