@@ -214,7 +214,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 <YAxis stroke="#64748b" fontSize={12} tickLine={false} tickFormatter={(val) => `R$${val / 1000}k`} />
                 <Tooltip 
                   contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '0.75rem', fontSize: '12px' }}
-                  formatter={(value: any) => [formatarMoeda(Number(value) || 0), '']}
+                  formatter={(value: any, name: any) => [formatarMoeda(Number(value) || 0), name]}
                 />
                 <Bar dataKey="receitas" fill="#14b8a6" radius={[4, 4, 0, 0]} name="Receitas" />
                 <Bar dataKey="despesas" fill="#f43f5e" radius={[4, 4, 0, 0]} name="Despesas" />

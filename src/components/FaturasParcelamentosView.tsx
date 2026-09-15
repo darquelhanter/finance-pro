@@ -38,7 +38,6 @@ import {
   Tooltip, 
   ResponsiveContainer,
   Cell,
-  Line,
   ComposedChart
 } from 'recharts';
 import { CartaoCredito, Categoria, Lancamento } from '../types';
@@ -560,20 +559,13 @@ export const FaturasParcelamentosView: React.FC<FaturasParcelamentosViewProps> =
                   />
                   <Bar dataKey="valorTotal" radius={[6, 6, 0, 0]}>
                     {projecoesMeses.map((entry, index) => (
-                      <Cell 
-                        key={`cell-${index}`} 
-                        fill={entry.itensFinalizando.length > 0 ? '#10b981' : '#6366f1'} 
+                      <Cell
+                        key={`cell-${index}`}
+                        fill={entry.itensFinalizando.length > 0 ? '#10b981' : '#6366f1'}
                         fillOpacity={0.85}
                       />
                     ))}
                   </Bar>
-                  <Line 
-                    type="monotone" 
-                    dataKey="valorTotal" 
-                    stroke="#a855f7" 
-                    strokeWidth={2} 
-                    dot={{ fill: '#a855f7', r: 3 }} 
-                  />
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
@@ -1001,9 +993,9 @@ export const FaturasParcelamentosView: React.FC<FaturasParcelamentosViewProps> =
                           <div className="bg-slate-950 border border-slate-800 p-3 rounded-xl shadow-xl text-xs space-y-1">
                             <p className="font-bold text-white">{d.rotuloMes}</p>
                             <p className="text-slate-400">Fatura Atual: {formatarMoeda(d.valorOriginal)}</p>
-                            <p className="text-purple-300 font-mono font-bold">Com Nova Compra: {formatarMoeda(d.valorNovo)}</p>
+                            <p className="text-amber-300 font-mono font-bold">Com Nova Compra: {formatarMoeda(d.valorNovo)}</p>
                             {d.parcelaNovaValor > 0 && (
-                              <p className="text-purple-400 text-[11px]">+ {formatarMoeda(d.parcelaNovaValor)} da nova compra</p>
+                              <p className="text-amber-400 text-[11px]">+ {formatarMoeda(d.parcelaNovaValor)} da nova compra</p>
                             )}
                           </div>
                         );
@@ -1012,7 +1004,7 @@ export const FaturasParcelamentosView: React.FC<FaturasParcelamentosViewProps> =
                     }}
                   />
                   <Bar dataKey="valorOriginal" name="Fatura Atual" fill="#6366f1" radius={[4, 4, 0, 0]} opacity={0.6} />
-                  <Bar dataKey="valorNovo" name="Com Nova Compra" fill="#a855f7" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="valorNovo" name="Com Nova Compra" fill="#f59e0b" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -1023,7 +1015,7 @@ export const FaturasParcelamentosView: React.FC<FaturasParcelamentosViewProps> =
                 <span>Fatura Atual (Sem a Compra)</span>
               </div>
               <div className="flex items-center gap-1.5">
-                <div className="w-3 h-3 rounded-sm bg-purple-500"></div>
+                <div className="w-3 h-3 rounded-sm bg-amber-500"></div>
                 <span>Fatura Projetada (Com a Nova Compra)</span>
               </div>
             </div>
