@@ -5,8 +5,8 @@
 
 import fs from 'fs';
 import path from 'path';
-import { GeminiService } from '../../src/services/ai/gemini.service';
-import { verificarToken, ErroAutenticacao } from './auth';
+import { GeminiService } from '../../src/services/ai/gemini.service.js';
+import { verificarToken, ErroAutenticacao } from './auth.js';
 
 /**
  * Handlers compartilhados entre o servidor Express local (server.ts, usado em `npm run dev`)

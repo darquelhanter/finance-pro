@@ -4,7 +4,7 @@
  */
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { handleHealth } from './_lib/handlers';
+import { handleHealth } from './_lib/handlers.js';
 
 export default function handler(req: VercelRequest, res: VercelResponse) {
   return handleHealth(req, res);

@@ -4,8 +4,8 @@
  */
 
 import { GoogleGenAI, Type } from '@google/genai';
-import { ExtracaoFaturaResponse, InsightFinanceiro } from '../../types';
-import { ParcelamentoService } from '../../utils/parcelas';
+import { ExtracaoFaturaResponse, InsightFinanceiro } from '../../types.js';
+import { ParcelamentoService } from '../../utils/parcelas.js';
 
 let genAIClient: GoogleGenAI | null = null;
 

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { StatusLancamento } from '../types';
+import { StatusLancamento } from '../types.js';
 
 /**
  * Normaliza uma descrição de lançamento para comparação (trim + minúsculas).

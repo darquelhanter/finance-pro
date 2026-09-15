@@ -4,7 +4,7 @@
  */
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { handleInsights } from '../_lib/handlers';
+import { handleInsights } from '../_lib/handlers.js';
 
 export default function handler(req: VercelRequest, res: VercelResponse) {
   return handleInsights(req, res);

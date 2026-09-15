@@ -3,9 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Lancamento, CartaoCredito, Categoria } from '../types';
-import { slugificarDescricao } from './format';
-import { RecorrenciaService } from '../services/domain/recorrencia.service';
+import { Lancamento, CartaoCredito, Categoria } from '../types.js';
+import { slugificarDescricao } from './format.js';
+import { RecorrenciaService } from '../services/domain/recorrencia.service.js';
 
 export interface CompraParceladaAgrupada {
   id: string;

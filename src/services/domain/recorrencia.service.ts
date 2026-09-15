@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { FrequenciaRecorrencia } from '../../types';
+import { FrequenciaRecorrencia } from '../../types.js';
 
 export class RecorrenciaService {
   /**
