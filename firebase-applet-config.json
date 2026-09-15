@@ -1,12 +1,8 @@
 {
-  "projectId": "restful-plateau-v7c1c",
-  "appId": "1:154976612422:web:55afab2e24078dbdd5da47",
-  "apiKey": "AIzaSyBhOXNFtk2K0LGtmaeHfQTIbEfEE7MTPj4",
-  "authDomain": "restful-plateau-v7c1c.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-financepro-a7ce492b-48d1-419f-bc17-ffc7389243ee",
-  "storageBucket": "restful-plateau-v7c1c.firebasestorage.app",
-  "messagingSenderId": "154976612422",
-  "measurementId": "",
-  "oAuthClientId": "154976612422-19gu71omktlg8v92hc85cnej73c7aq94.apps.googleusercontent.com",
-  "recaptchaSiteKey": ""
+  "projectId": "deep-diorama-ckpr3",
+  "appId": "1:1069697542643:web:d6955ece442dccc9444a86",
+  "apiKey": "AIzaSyDaYo4qBXeaL8zBMf9S1iUriQQ_JiAiFJw",
+  "authDomain": "deep-diorama-ckpr3.firebaseapp.com",
+  "storageBucket": "deep-diorama-ckpr3.firebasestorage.app",
+  "messagingSenderId": "1069697542643"
 }
