@@ -6,14 +6,11 @@
 import 'dotenv/config';
 import express from 'express';
 import path from 'path';
-import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
-import { GeminiService } from './src/services/ai/gemini.service';
-import { exigirUsuarioAutenticado } from './src/services/firebase/admin.auth';
+import { handleExtrairFatura, handleInsights, handleSchemaSql } from './api/_lib/handlers';
 
 async function startServer() {
   const app = express();
-  // Cloud Run injects PORT (normally 8080) and requires the container to listen on it.
   const PORT = Number(process.env.PORT) || 3000;
 
   app.use(express.json({ limit: '50mb' }));
@@ -23,59 +20,20 @@ async function startServer() {
   // Nota: os dados reais do app (contas, cartões, lançamentos) vivem no Firestore e são
   // acessados diretamente pelo cliente via Firebase SDK (ver src/services/firebase/).
   // As únicas rotas server-side são as que precisam da GEMINI_API_KEY, que fica só aqui
-  // no servidor — por isso exigem um usuário autenticado para não virar um proxy gratuito
-  // da API do Gemini para qualquer visitante da URL pública.
+  // no servidor — por isso exigem um usuário autenticado (ver api/_lib/auth.ts) para não
+  // virar um proxy gratuito da API do Gemini para qualquer visitante da URL pública.
+  // A lógica de cada rota vive em api/_lib/handlers.ts, compartilhada com as Serverless
+  // Functions da Vercel (api/ia/*.ts) usadas em produção — este servidor Express roda
+  // apenas em desenvolvimento local (`npm run dev`).
 
   // Health check
   app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', app: 'Finance Pro Engine', time: new Date().toISOString() });
   });
 
-  // IA: Extrair Fatura / Comprovante
-  app.post('/api/ia/extrair-fatura', exigirUsuarioAutenticado, async (req, res) => {
-    try {
-      const { texto, imagemBase64, mimeType } = req.body;
-      const resultado = await GeminiService.extrairItensFatura({ texto, imagemBase64, mimeType });
-      res.json(resultado);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  // IA: Insights Financeiros
-  app.post('/api/ia/insights', exigirUsuarioAutenticado, async (req, res) => {
-    try {
-      const resumo = req.body?.resumo || {};
-      const insights = await GeminiService.gerarInsightsFinanceiros({
-        receitasTotal: Number(resumo.receitasMes) || 0,
-        despesasTotal: Number(resumo.despesasMes) || 0,
-        saldoConsolidado: Number(resumo.saldoTotalConsolidado) || 0,
-        categoriasGasto: (resumo.despesasPorCategoria || []).map((c: any) => ({
-          nome: c.categoriaNome || c.nome || 'Geral',
-          valor: Number(c.valor) || 0,
-          percentual: Number(c.percentual) || 0,
-        })),
-      });
-      res.json(insights);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  // Schema SQL real (referência de estrutura de dados, exibida no modal "Ver Schema SQL")
-  app.get('/api/schema-sql', exigirUsuarioAutenticado, (req, res) => {
-    try {
-      const sqlPath = path.join(process.cwd(), 'src', 'services', 'schema_financepro.sql');
-      if (fs.existsSync(sqlPath)) {
-        const content = fs.readFileSync(sqlPath, 'utf8');
-        res.setHeader('Content-Type', 'text/plain');
-        return res.send(content);
-      }
-      res.status(404).send('-- Schema file not found');
-    } catch (err: any) {
-      res.status(500).send(err.message);
-    }
-  });
+  app.post('/api/ia/extrair-fatura', (req, res) => handleExtrairFatura(req, res));
+  app.post('/api/ia/insights', (req, res) => handleInsights(req, res));
+  app.get('/api/schema-sql', (req, res) => handleSchemaSql(req, res));
 
   // --- VITE MIDDLEWARE & STATIC SERVING ---
   if (process.env.NODE_ENV !== 'production') {
