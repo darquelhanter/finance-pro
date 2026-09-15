@@ -39,7 +39,7 @@ import {
   StatusLancamento,
   DadosPagamento
 } from './types';
-import { formatarMoeda, formatarDataBr, slugificarDescricao, construirChaveLancamento } from './utils/format';
+import { formatarMoeda, formatarDataBr, slugificarDescricao, construirChaveLancamento, mesclarCamposReimportacao } from './utils/format';
 import { ParcelamentoService } from './utils/parcelas';
 import {
   subscribeContas,
@@ -1245,26 +1245,20 @@ export function App() {
         : undefined;
 
       const novoId = lancamentoExistente?.id || `lanc_imp_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+      const camposReimportacao = mesclarCamposReimportacao(lancamentoExistente, item.categoriaSugeridaId, deveCriarContaPagar);
 
       const lanc: Lancamento = {
         id: novoId,
         tipo: 'despesa',
         descricao: descItem,
         valor: valorItem,
-        // Preserva uma categoria já corrigida manualmente no lançamento existente;
-        // só usa a sugestão da IA quando não há registro prévio.
-        categoriaId: lancamentoExistente?.categoriaId || item.categoriaSugeridaId || (categorias[0]?.id || 'cat_outros'),
+        categoriaId: camposReimportacao.categoriaId || (categorias[0]?.id || 'cat_outros'),
         cartaoId: targetCartaoId,
         faturaId: faturaId || 'fat_atual',
         dataCompetencia: dataItem,
         dataVencimento: dataItem,
-        // Se gera a Conta a Pagar consolidada, a compra individual no cartão é marcada como 'pago' (já autorizada no cartão)
-        // e como apenasVisualizacao para não duplicar na soma do dashboard e contas a pagar —
-        // mas nunca reverte um cancelamento manual feito pelo usuário.
-        status: lancamentoExistente?.status === 'cancelado'
-          ? 'cancelado'
-          : (deveCriarContaPagar ? 'pago' : (lancamentoExistente?.status || 'pendente')),
-        apenasVisualizacao: lancamentoExistente?.apenasVisualizacao ?? deveCriarContaPagar,
+        status: camposReimportacao.status,
+        apenasVisualizacao: camposReimportacao.apenasVisualizacao,
         parcela: numParc && totParc && totParc > 1 ? {
           numero: numParc,
           total: totParc,

@@ -3,6 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { StatusLancamento } from '../types';
+
 /**
  * Normaliza uma descrição de lançamento para comparação (trim + minúsculas).
  */
@@ -31,6 +33,29 @@ export function construirChaveLancamento(descricao: string, valor: number, dataV
 }
 
 /**
+ * Política única para reconciliar campos ao reimportar um item de fatura contra um
+ * lançamento já existente (mesma chave de construirChaveLancamento): dados definidos
+ * manualmente pelo usuário no lançamento existente sempre vencem os dados recém-extraídos
+ * pela IA. Mantida em um único lugar para as regras de status/categoria/visualização
+ * não divergirem ou virarem condicionais ad-hoc espalhadas pelo import.
+ */
+export function mesclarCamposReimportacao(
+  lancamentoExistente: { status?: StatusLancamento; categoriaId?: string; apenasVisualizacao?: boolean } | undefined,
+  categoriaSugeridaId: string | undefined,
+  deveCriarContaPagar: boolean
+): { status: StatusLancamento; categoriaId?: string; apenasVisualizacao: boolean } {
+  return {
+    status: lancamentoExistente?.status === 'cancelado'
+      ? 'cancelado'
+      : (deveCriarContaPagar ? 'pago' : (lancamentoExistente?.status || 'pendente')),
+    categoriaId: lancamentoExistente?.categoriaId || categoriaSugeridaId,
+    apenasVisualizacao: lancamentoExistente?.apenasVisualizacao ?? deveCriarContaPagar,
+  };
+}
+
+const formatadorDataBr = new Intl.DateTimeFormat('pt-BR');
+
+/**
  * Formata uma data no formato "YYYY-MM-DD" para o padrão brasileiro "DD/MM/AAAA"
  * usando Intl.DateTimeFormat (em vez de split/reverse/join manual espalhado pelo app).
  */
@@ -38,7 +63,7 @@ export function formatarDataBr(data?: string | null): string {
   if (!data) return '-';
   const [ano, mes, dia] = data.split('-').map(Number);
   if (!ano || !mes || !dia) return data;
-  return new Intl.DateTimeFormat('pt-BR').format(new Date(ano, mes - 1, dia));
+  return formatadorDataBr.format(new Date(ano, mes - 1, dia));
 }
 
 /**

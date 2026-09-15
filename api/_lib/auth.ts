@@ -32,7 +32,7 @@ export class ErroAutenticacao extends Error {
 export async function verificarToken(req: { headers: Record<string, string | string[] | undefined> }): Promise<string> {
   garantirAppAdmin();
 
-  const authHeader = req.headers.authorization || (req.headers as any).Authorization || '';
+  const authHeader = req.headers.authorization;
   const headerStr = Array.isArray(authHeader) ? authHeader[0] : authHeader;
   const token = headerStr?.startsWith('Bearer ') ? headerStr.slice(7) : null;
 

@@ -22,6 +22,7 @@ import { Conta, CartaoCredito, Categoria, FrequenciaRecorrencia, TipoLancamento 
 import { LancamentoService } from '../services/domain/lancamento.service';
 import { RecorrenciaService } from '../services/domain/recorrencia.service';
 import { formatarMoeda, formatarDataBr } from '../utils/format';
+import { useEscapeKey } from '../hooks/useEscapeKey';
 
 interface NovoLancamentoModalProps {
   isOpen: boolean;
@@ -90,14 +91,7 @@ export const NovoLancamentoModal: React.FC<NovoLancamentoModalProps> = ({
     return RecorrenciaService.gerarProjecaoDatas(dataVencimento, frequencia, 4);
   }, [dataVencimento, frequencia]);
 
-  React.useEffect(() => {
-    if (!isOpen) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
+  useEscapeKey(isOpen, onClose);
 
   if (!isOpen) return null;
 

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   WalletCards, 
   PlusCircle, 
@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { formatarMoeda } from '../utils/format';
 import { useAuth } from '../context/AuthContext';
+import { useEscapeKey } from '../hooks/useEscapeKey';
 
 interface NavbarProps {
   currentTab: string;
@@ -45,22 +46,18 @@ export const Navbar: React.FC<NavbarProps> = ({
   const [menuUsuarioAberto, setMenuUsuarioAberto] = useState(false);
   const menuUsuarioRef = useRef<HTMLDivElement>(null);
 
+  const fecharMenuUsuario = useCallback(() => setMenuUsuarioAberto(false), []);
+  useEscapeKey(menuUsuarioAberto, fecharMenuUsuario);
+
   useEffect(() => {
     if (!menuUsuarioAberto) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setMenuUsuarioAberto(false);
-    };
     const handleClickOutside = (e: MouseEvent) => {
       if (menuUsuarioRef.current && !menuUsuarioRef.current.contains(e.target as Node)) {
         setMenuUsuarioAberto(false);
       }
     };
-    window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('mousedown', handleClickOutside);
-    };
+    return () => window.removeEventListener('mousedown', handleClickOutside);
   }, [menuUsuarioAberto]);
 
   const tabs = [

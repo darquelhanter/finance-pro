@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 import { CartaoCredito, Categoria, ImportacaoFaturaItem, ExtracaoFaturaResponse } from '../types';
 import { formatarMoeda, formatarDataBr } from '../utils/format';
-import { obterTokenAtual } from '../services/firebase/auth.service';
+import { fetchAutenticado } from '../services/firebase/auth.service';
 
 interface ImportacaoFaturaViewProps {
   cartoes?: CartaoCredito[];
@@ -370,13 +370,9 @@ export const ImportacaoFaturaView: React.FC<ImportacaoFaturaViewProps> = ({
 
       let res: Response;
       try {
-        const token = await obterTokenAtual();
-        res = await fetch('/api/ia/extrair-fatura', {
+        res = await fetchAutenticado('/api/ia/extrair-fatura', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         });
       } catch (netErr: any) {
@@ -1273,11 +1269,11 @@ export const ImportacaoFaturaView: React.FC<ImportacaoFaturaViewProps> = ({
       {/* Modal de Edição Detalhada de Lançamento e Parcelamento */}
       {itemEmEdicao && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-fadeIn">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 max-w-lg w-full shadow-2xl space-y-4">
+          <div role="dialog" aria-modal="true" aria-labelledby="modal-editar-compra-title" className="bg-slate-900 border border-slate-800 rounded-2xl p-5 max-w-lg w-full shadow-2xl space-y-4">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div className="flex items-center gap-2">
                 <Edit2 className="w-5 h-5 text-indigo-400" />
-                <h3 className="text-base font-bold text-white">Editar Compra / Parcela</h3>
+                <h3 id="modal-editar-compra-title" className="text-base font-bold text-white">Editar Compra / Parcela</h3>
               </div>
               <button
                 type="button"

@@ -4,7 +4,8 @@
  */
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { handleHealth } from './_lib/handlers';
 
 export default function handler(req: VercelRequest, res: VercelResponse) {
-  res.status(200).json({ status: 'ok', app: 'Finance Pro Engine', time: new Date().toISOString() });
+  return handleHealth(req, res);
 }

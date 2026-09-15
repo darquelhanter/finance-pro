@@ -7,7 +7,7 @@ import 'dotenv/config';
 import express from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
-import { handleExtrairFatura, handleInsights, handleSchemaSql } from './api/_lib/handlers';
+import { handleHealth, handleExtrairFatura, handleInsights, handleSchemaSql } from './api/_lib/handlers';
 
 async function startServer() {
   const app = express();
@@ -26,11 +26,7 @@ async function startServer() {
   // Functions da Vercel (api/ia/*.ts) usadas em produção — este servidor Express roda
   // apenas em desenvolvimento local (`npm run dev`).
 
-  // Health check
-  app.get('/api/health', (req, res) => {
-    res.json({ status: 'ok', app: 'Finance Pro Engine', time: new Date().toISOString() });
-  });
-
+  app.get('/api/health', (req, res) => handleHealth(req, res));
   app.post('/api/ia/extrair-fatura', (req, res) => handleExtrairFatura(req, res));
   app.post('/api/ia/insights', (req, res) => handleInsights(req, res));
   app.get('/api/schema-sql', (req, res) => handleSchemaSql(req, res));

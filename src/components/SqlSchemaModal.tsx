@@ -5,7 +5,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { X, Copy, Check, Database, FileCode2, Terminal } from 'lucide-react';
-import { obterTokenAtual } from '../services/firebase/auth.service';
+import { fetchAutenticado } from '../services/firebase/auth.service';
+import { useEscapeKey } from '../hooks/useEscapeKey';
 
 interface SqlSchemaModalProps {
   isOpen: boolean;
@@ -18,25 +19,14 @@ export const SqlSchemaModal: React.FC<SqlSchemaModalProps> = ({ isOpen, onClose 
 
   useEffect(() => {
     if (isOpen) {
-      obterTokenAtual().then((token) =>
-        fetch('/api/schema-sql', {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        })
-          .then((res) => res.text())
-          .then((data) => setSqlContent(data))
-          .catch(() => setSqlContent('-- Erro ao carregar script SQL'))
-      );
+      fetchAutenticado('/api/schema-sql')
+        .then((res) => res.text())
+        .then((data) => setSqlContent(data))
+        .catch(() => setSqlContent('-- Erro ao carregar script SQL'));
     }
   }, [isOpen]);
 
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
+  useEscapeKey(isOpen, onClose);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(sqlContent);

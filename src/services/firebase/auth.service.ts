@@ -37,10 +37,26 @@ export function observarEstadoAutenticacao(callback: (user: User | null) => void
 
 /**
  * Retorna o ID token do usuário logado, usado para autenticar chamadas às
- * rotas server-side que consomem a API do Gemini (ver src/services/firebase/admin.auth.ts).
+ * rotas server-side que consomem a API do Gemini (ver api/_lib/auth.ts).
  */
 export async function obterTokenAtual(): Promise<string | null> {
   const user = auth.currentUser;
   if (!user) return null;
   return user.getIdToken();
+}
+
+/**
+ * `fetch` com o Firebase ID token do usuário logado anexado ao header
+ * Authorization — usado nas chamadas às rotas server-side protegidas
+ * (/api/ia/*, /api/schema-sql, ver api/_lib/auth.ts).
+ */
+export async function fetchAutenticado(url: string, options: RequestInit = {}): Promise<Response> {
+  const token = await obterTokenAtual();
+  return fetch(url, {
+    ...options,
+    headers: {
+      ...options.headers,
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  });
 }

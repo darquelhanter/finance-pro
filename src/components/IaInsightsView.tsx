@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { InsightFinanceiro, DashboardResumo } from '../types';
 import { formatarMoeda } from '../utils/format';
-import { obterTokenAtual } from '../services/firebase/auth.service';
+import { fetchAutenticado } from '../services/firebase/auth.service';
 
 interface IaInsightsViewProps {
   resumo?: DashboardResumo;
@@ -44,13 +44,9 @@ export const IaInsightsView: React.FC<IaInsightsViewProps> = ({
     setCarregando(true);
     setErro(null);
     try {
-      const token = await obterTokenAtual();
-      const res = await fetch('/api/ia/insights', {
+      const res = await fetchAutenticado('/api/ia/insights', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ resumo }),
       });
       if (res.ok) {

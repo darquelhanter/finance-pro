@@ -111,8 +111,8 @@ export const ModalDetalhesLancamento: React.FC<ModalDetalhesLancamentoProps> = (
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-sm animate-fadeIn">
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-xl overflow-hidden shadow-2xl flex flex-col max-h-[92vh]">
-        
+      <div role="dialog" aria-modal="true" aria-labelledby="modal-detalhes-lancamento-title" className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-xl overflow-hidden shadow-2xl flex flex-col max-h-[92vh]">
+
         {/* Header */}
         <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/60">
           <div className="flex items-center gap-2.5">
@@ -122,7 +122,7 @@ export const ModalDetalhesLancamento: React.FC<ModalDetalhesLancamentoProps> = (
               {isFatura ? <Receipt className="w-5 h-5" /> : <FileText className="w-5 h-5" />}
             </div>
             <div>
-              <h2 className="text-base font-bold text-white">
+              <h2 id="modal-detalhes-lancamento-title" className="text-base font-bold text-white">
                 {isFatura ? 'Fatura Consolidada' : 'Editar & Gerenciar Lançamento'}
               </h2>
               <p className="text-xs text-slate-400">Altere descrição, valor, categoria, vencimento ou divida</p>
