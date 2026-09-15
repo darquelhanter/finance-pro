@@ -34,3 +34,13 @@ export async function logoutUsuario(): Promise<void> {
 export function observarEstadoAutenticacao(callback: (user: User | null) => void) {
   return fbOnAuthStateChanged(auth, callback);
 }
+
+/**
+ * Retorna o ID token do usuário logado, usado para autenticar chamadas às
+ * rotas server-side que consomem a API do Gemini (ver src/services/firebase/admin.auth.ts).
+ */
+export async function obterTokenAtual(): Promise<string | null> {
+  const user = auth.currentUser;
+  if (!user) return null;
+  return user.getIdToken();
+}

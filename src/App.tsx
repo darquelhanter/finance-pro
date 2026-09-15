@@ -4,7 +4,16 @@
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
-import confetti from 'canvas-confetti';
+import confettiLib from 'canvas-confetti';
+
+// Respeita prefers-reduced-motion: usuários que desativaram animações no sistema
+// não recebem os efeitos de confete disparados ao longo do app.
+function confetti(options: Parameters<typeof confettiLib>[0]) {
+  if (typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    return;
+  }
+  return confettiLib(options);
+}
 import { useAuth } from './context/AuthContext';
 import { LoginView } from './components/LoginView';
 import { Navbar } from './components/Navbar';
@@ -30,7 +39,7 @@ import {
   StatusLancamento,
   DadosPagamento
 } from './types';
-import { formatarMoeda } from './utils/format';
+import { formatarMoeda, formatarDataBr, slugificarDescricao, construirChaveLancamento } from './utils/format';
 import { ParcelamentoService } from './utils/parcelas';
 import {
   subscribeContas,
@@ -435,7 +444,7 @@ export function App() {
     const vistos = new Set<string>();
     const idsDuplicados: string[] = [];
     for (const lanc of lancamentos) {
-      const chave = `${lanc.descricao.trim().toLowerCase()}_${lanc.valor}_${lanc.dataVencimento || ''}`;
+      const chave = construirChaveLancamento(lanc.descricao, lanc.valor, lanc.dataVencimento);
       if (vistos.has(chave)) {
         idsDuplicados.push(lanc.id);
       } else {
@@ -1100,7 +1109,7 @@ export function App() {
           status: 'pendente', // Pendente em Contas a Pagar
           apenasVisualizacao: false, // Despesa Real a Pagar!
           tags: ['contas-a-pagar', 'boleto', 'conta_servico', 'despesa_direta', 'ia'],
-          observacoes: `Conta / Boleto ${nomeEmissorOuCartao} (Vencimento: ${dataVencimentoFatura.split('-').reverse().join('/')}). Detalhamento dos serviços:\n${detalhamento}`,
+          observacoes: `Conta / Boleto ${nomeEmissorOuCartao} (Vencimento: ${formatarDataBr(dataVencimentoFatura)}). Detalhamento dos serviços:\n${detalhamento}`,
           criadoEm: new Date().toISOString(),
           atualizadoEm: new Date().toISOString(),
         };
@@ -1131,7 +1140,7 @@ export function App() {
             status: 'pendente', // Pendente em Contas a Pagar
             apenasVisualizacao: false, // Despesa Real a Pagar!
             tags: ['contas-a-pagar', 'boleto', 'conta_servico', 'ia', 'despesa_direta'],
-            observacoes: `Item de conta / boleto (${nomeEmissorOuCartao}). Vencimento: ${(dataVencimentoFatura || dataItem).split('-').reverse().join('/')}.`,
+            observacoes: `Item de conta / boleto (${nomeEmissorOuCartao}). Vencimento: ${formatarDataBr(dataVencimentoFatura || dataItem)}.`,
             criadoEm: new Date().toISOString(),
             atualizadoEm: new Date().toISOString(),
           };
@@ -1214,7 +1223,7 @@ export function App() {
     const faturaRefId = `fat_${targetCartaoId}_${Date.now()}`;
 
     // 1. Salva cada lançamento detalhado extraído da fatura
-    for (const item of selecionados) {
+    await Promise.all(selecionados.map(async (item) => {
       const valorItem = Math.abs(Number(item.valor) || 0);
       const dataItem = item.data || new Date().toISOString().split('T')[0];
       const descItem = item.descricao.trim();
@@ -1224,39 +1233,47 @@ export function App() {
       const totParc = item.totalParcelas || infoParc.totalParcelas;
       const descLimpa = infoParc.descricaoBase || descItem;
 
-      // Procura se já existe exatamente o mesmo lançamento no mesmo cartão
-      const lancamentoExistente = lancamentos.find(
-        l => l.cartaoId === targetCartaoId && 
-             (l.descricao.trim().toLowerCase() === descItem.toLowerCase() || l.descricao.trim().toLowerCase().includes(descLimpa.toLowerCase())) && 
-             Math.abs(l.valor - valorItem) < 0.01 && 
-             (l.dataCompetencia === dataItem || l.dataVencimento === dataItem)
-      );
+      // Reconcilia com um lançamento já existente no mesmo cartão apenas quando a chave de
+      // identidade bate exatamente (mesma chave usada na limpeza de duplicatas acima) — uma
+      // descrição vazia nunca "casa" com nada, e correspondência parcial (includes) não é usada
+      // para não fundir compras diferentes que só coincidem em parte da descrição/valor/data.
+      const lancamentoExistente = descItem
+        ? lancamentos.find(
+            l => l.cartaoId === targetCartaoId &&
+                 construirChaveLancamento(l.descricao, l.valor, l.dataVencimento) === construirChaveLancamento(descItem, valorItem, dataItem)
+          )
+        : undefined;
 
       const novoId = lancamentoExistente?.id || `lanc_imp_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-      
+
       const lanc: Lancamento = {
         id: novoId,
         tipo: 'despesa',
         descricao: descItem,
         valor: valorItem,
-        categoriaId: item.categoriaSugeridaId || lancamentoExistente?.categoriaId || (categorias[0]?.id || 'cat_outros'),
+        // Preserva uma categoria já corrigida manualmente no lançamento existente;
+        // só usa a sugestão da IA quando não há registro prévio.
+        categoriaId: lancamentoExistente?.categoriaId || item.categoriaSugeridaId || (categorias[0]?.id || 'cat_outros'),
         cartaoId: targetCartaoId,
         faturaId: faturaId || 'fat_atual',
         dataCompetencia: dataItem,
         dataVencimento: dataItem,
         // Se gera a Conta a Pagar consolidada, a compra individual no cartão é marcada como 'pago' (já autorizada no cartão)
-        // e como apenasVisualizacao para não duplicar na soma do dashboard e contas a pagar
-        status: deveCriarContaPagar ? 'pago' : (lancamentoExistente?.status || 'pendente'),
-        apenasVisualizacao: deveCriarContaPagar,
+        // e como apenasVisualizacao para não duplicar na soma do dashboard e contas a pagar —
+        // mas nunca reverte um cancelamento manual feito pelo usuário.
+        status: lancamentoExistente?.status === 'cancelado'
+          ? 'cancelado'
+          : (deveCriarContaPagar ? 'pago' : (lancamentoExistente?.status || 'pendente')),
+        apenasVisualizacao: lancamentoExistente?.apenasVisualizacao ?? deveCriarContaPagar,
         parcela: numParc && totParc && totParc > 1 ? {
           numero: numParc,
           total: totParc,
-          lancamentoPaiId: `imp_parc_${descLimpa.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${targetCartaoId}_${totParc}`,
+          lancamentoPaiId: `imp_parc_${slugificarDescricao(descLimpa)}_${targetCartaoId}_${totParc}`,
         } : lancamentoExistente?.parcela,
         tags: Array.from(new Set([
           ...(lancamentoExistente?.tags || []),
-          'item_fatura', 
-          'detalhamento_cartao', 
+          'item_fatura',
+          'detalhamento_cartao',
           'extrato_cartao',
           ...(numParc && totParc && totParc > 1 ? ['parcelamento', `parc_${numParc}_${totParc}`] : [])
         ])),
@@ -1265,7 +1282,7 @@ export function App() {
         atualizadoEm: new Date().toISOString(),
       };
       await salvarLancamento(user.uid, lanc);
-    }
+    }));
 
     // 2. Cria a Conta a Pagar consolidada com o Valor Total e a Data de Vencimento da Fatura
     if (deveCriarContaPagar && valorTotalFatura > 0) {
@@ -1297,7 +1314,7 @@ export function App() {
         dataVencimento: dataVencimentoFatura,
         status: 'pendente', // Fatura Pendente em Contas a Pagar
         apenasVisualizacao: false,
-        observacoes: `Conta a pagar da fatura ${nomeFinalCartao} com ${selecionados.length} compras detalhadas extraídas via IA. Vencimento: ${dataVencimentoFatura.split('-').reverse().join('/')}.`,
+        observacoes: `Conta a pagar da fatura ${nomeFinalCartao} com ${selecionados.length} compras detalhadas extraídas via IA. Vencimento: ${formatarDataBr(dataVencimentoFatura)}.`,
         tags: ['fatura', 'contas-a-pagar', 'cartao', 'ia'],
         criadoEm: new Date().toISOString(),
         atualizadoEm: new Date().toISOString(),

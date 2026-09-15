@@ -30,7 +30,7 @@ import {
   CartesianGrid 
 } from 'recharts';
 import { DashboardResumo, Conta, CartaoCredito, Lancamento } from '../types';
-import { formatarMoeda } from '../utils/format';
+import { formatarMoeda, formatarDataBr } from '../utils/format';
 
 interface DashboardViewProps {
   resumo?: DashboardResumo;
@@ -160,10 +160,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
 
         {/* Card 4: Faturas / Balanço */}
-        <div 
-          id="kpi-faturas-abertas" 
+        <button
+          type="button"
+          id="kpi-faturas-abertas"
           onClick={() => onNavigateTab('faturas_parcelamentos')}
-          className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800 hover:border-indigo-500/50 hover:bg-slate-900 transition-all flex flex-col justify-between cursor-pointer group shadow-sm"
+          className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800 hover:border-indigo-500/50 hover:bg-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 transition-all flex flex-col justify-between text-left w-full cursor-pointer group shadow-sm"
         >
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-medium text-slate-400 group-hover:text-indigo-300 transition-colors">Faturas em Aberto & Dívidas</span>
@@ -182,7 +183,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </span>
             </div>
           </div>
-        </div>
+        </button>
       </div>
 
       {/* Middle Section: Chart + Category Breakdown */}
@@ -312,7 +313,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       <div className="text-xs text-slate-400 flex items-center gap-2 mt-0.5">
                         <span className="flex items-center gap-1">
                           <Clock className="w-3 h-3 text-slate-500" />
-                          Vence em: {lanc.dataVencimento ? lanc.dataVencimento.split('-').reverse().join('/') : '-'}
+                          Vence em: {formatarDataBr(lanc.dataVencimento)}
                         </span>
                         {lanc.dataVencimento && lanc.dataVencimento < new Date().toISOString().split('T')[0] && (
                           <span className="px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 font-semibold text-[10px] border border-rose-500/30 flex items-center gap-0.5">

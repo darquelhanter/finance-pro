@@ -239,6 +239,8 @@ export const ModalGerenciarCategorias: React.FC<ModalGerenciarCategoriasProps> =
           </div>
           <button
             onClick={onClose}
+            title="Fechar"
+            aria-label="Fechar"
             className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
@@ -487,6 +489,8 @@ export const ModalGerenciarCategorias: React.FC<ModalGerenciarCategoriasProps> =
                       key={c}
                       type="button"
                       onClick={() => setCor(c)}
+                      title={c}
+                      aria-label={`Cor ${c}`}
                       className={`w-7 h-7 rounded-xl transition-all cursor-pointer flex items-center justify-center ${
                         cor === c ? 'ring-2 ring-white scale-110 shadow-md' : 'opacity-80 hover:opacity-100'
                       }`}
@@ -520,6 +524,7 @@ export const ModalGerenciarCategorias: React.FC<ModalGerenciarCategoriasProps> =
                         type="button"
                         onClick={() => setIcone(item.nome)}
                         title={item.label}
+                        aria-label={item.label}
                         className={`p-2 rounded-xl flex items-center justify-center transition-all cursor-pointer ${
                           isSelected
                             ? 'bg-indigo-600 text-white shadow-md scale-105'

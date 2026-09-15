@@ -21,7 +21,7 @@ import {
   ArrowRight
 } from 'lucide-react';
 import { Lancamento, Conta, DadosPagamento } from '../types';
-import { formatarMoeda } from '../utils/format';
+import { formatarMoeda, formatarDataBr } from '../utils/format';
 
 interface ModalPagarContaProps {
   lancamento: Lancamento | null;
@@ -57,6 +57,7 @@ export const ModalPagarConta: React.FC<ModalPagarContaProps> = ({
 
   const [observacoes, setObservacoes] = useState<string>(lancamento.observacoes || '');
   const [salvando, setSalvando] = useState<boolean>(false);
+  const [erroValidacao, setErroValidacao] = useState<string | null>(null);
 
   // Calcula atraso em dias baseado na data de vencimento e data de pagamento
   const diasAtraso = useMemo(() => {
@@ -145,8 +146,9 @@ export const ModalPagarConta: React.FC<ModalPagarContaProps> = ({
 
   const handleSubmeter = async (e: React.FormEvent) => {
     e.preventDefault();
+    setErroValidacao(null);
     if (valorFinalEfetivo <= 0) {
-      alert('Por favor, informe um valor de pagamento válido maior que zero.');
+      setErroValidacao('Informe um valor de pagamento válido, maior que zero.');
       return;
     }
 
@@ -166,7 +168,7 @@ export const ModalPagarConta: React.FC<ModalPagarContaProps> = ({
       onClose();
     } catch (err) {
       console.error('Erro ao confirmar pagamento:', err);
-      alert('Ocorreu um erro ao salvar o pagamento.');
+      setErroValidacao('Ocorreu um erro ao salvar o pagamento. Tente novamente.');
     } finally {
       setSalvando(false);
     }
@@ -174,8 +176,8 @@ export const ModalPagarConta: React.FC<ModalPagarContaProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fadeIn">
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl flex flex-col max-h-[92vh]">
-        
+      <div role="dialog" aria-modal="true" aria-labelledby="modal-pagar-conta-title" className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl flex flex-col max-h-[92vh]">
+
         {/* Header */}
         <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/50">
           <div className="flex items-center gap-2.5">
@@ -183,7 +185,7 @@ export const ModalPagarConta: React.FC<ModalPagarContaProps> = ({
               <CheckCircle2 className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-white">Confirmar Pagamento de Conta</h2>
+              <h2 id="modal-pagar-conta-title" className="text-base font-bold text-white">Confirmar Pagamento de Conta</h2>
               <p className="text-xs text-slate-400">
                 {estaEmAtraso ? 'Conta vencida — cálculo de juros e multa disponível' : 'Registre a quitação e débito na conta'}
               </p>
@@ -191,6 +193,8 @@ export const ModalPagarConta: React.FC<ModalPagarContaProps> = ({
           </div>
           <button
             onClick={onClose}
+            title="Fechar"
+            aria-label="Fechar"
             className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
@@ -218,7 +222,7 @@ export const ModalPagarConta: React.FC<ModalPagarContaProps> = ({
             <div className="flex items-center justify-between text-xs pt-2 border-t border-slate-800/60">
               <span className="text-slate-400 flex items-center gap-1">
                 <Calendar className="w-3.5 h-3.5 text-slate-500" />
-                Vencimento original: <strong className="text-slate-200">{lancamento.dataVencimento ? lancamento.dataVencimento.split('-').reverse().join('/') : 'Não informado'}</strong>
+                Vencimento original: <strong className="text-slate-200">{lancamento.dataVencimento ? formatarDataBr(lancamento.dataVencimento) : 'Não informado'}</strong>
               </span>
               
               {estaEmAtraso ? (
@@ -465,23 +469,28 @@ export const ModalPagarConta: React.FC<ModalPagarContaProps> = ({
           </div>
 
           {/* Footer Actions */}
-          <div className="pt-2 flex items-center justify-end gap-3 border-t border-slate-800">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={salvando}
-              className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition-colors cursor-pointer"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={salvando}
-              className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-lg shadow-emerald-950/60 flex items-center gap-1.5 transition-all cursor-pointer"
-            >
-              <CheckCircle2 className="w-4 h-4" />
-              <span>{salvando ? 'Processando...' : 'Confirmar Pagamento'}</span>
-            </button>
+          <div className="pt-2 space-y-2 border-t border-slate-800">
+            {erroValidacao && (
+              <p role="alert" className="text-xs text-rose-400 font-medium">{erroValidacao}</p>
+            )}
+            <div className="flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={salvando}
+                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={salvando}
+                className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-lg shadow-emerald-950/60 flex items-center gap-1.5 transition-all cursor-pointer"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                <span>{salvando ? 'Processando…' : 'Confirmar Pagamento'}</span>
+              </button>
+            </div>
           </div>
 
         </form>

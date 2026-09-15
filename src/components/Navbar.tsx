@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   WalletCards, 
   PlusCircle, 
@@ -43,6 +43,25 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   const { user, logout } = useAuth();
   const [menuUsuarioAberto, setMenuUsuarioAberto] = useState(false);
+  const menuUsuarioRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!menuUsuarioAberto) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMenuUsuarioAberto(false);
+    };
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuUsuarioRef.current && !menuUsuarioRef.current.contains(e.target as Node)) {
+        setMenuUsuarioAberto(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [menuUsuarioAberto]);
 
   const tabs = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -62,7 +81,11 @@ export const Navbar: React.FC<NavbarProps> = ({
         <div className="flex items-center justify-between h-16 gap-3">
           
           {/* Logo & Project Title */}
-          <div className="flex items-center gap-3 cursor-pointer" onClick={() => setCurrentTab('dashboard')}>
+          <button
+            type="button"
+            onClick={() => setCurrentTab('dashboard')}
+            className="flex items-center gap-3 cursor-pointer text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 rounded-xl"
+          >
             <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-emerald-600 via-emerald-500 to-teal-400 flex items-center justify-center shadow-lg shadow-emerald-950/50 text-white font-bold shrink-0">
               <WalletCards className="w-5 h-5 text-white" />
             </div>
@@ -79,7 +102,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </span>
               </p>
             </div>
-          </div>
+          </button>
 
           {/* Desktop Navigation Tabs */}
           <nav id="nav-tabs" className="hidden lg:flex items-center gap-1 bg-slate-900/90 p-1 rounded-xl border border-slate-800/70">
@@ -113,6 +136,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 id="btn-gerenciar-categorias-navbar"
                 onClick={onOpenCategoriasModal}
                 title="Gerenciar Categorias (Criar, Editar, Renomear, Excluir e Mesclar)"
+                aria-label="Gerenciar Categorias"
                 className="p-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 transition-colors flex items-center gap-1.5 text-xs font-medium cursor-pointer"
               >
                 <Tags className="w-4 h-4 text-indigo-400" />
@@ -124,6 +148,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               id="btn-sql-schema"
               onClick={onOpenSqlModal}
               title="Visualizar Script PostgreSQL"
+              aria-label="Visualizar Script SQL"
               className="p-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 transition-colors flex items-center gap-1.5 text-xs font-medium cursor-pointer"
             >
               <FileCode2 className="w-4 h-4 text-emerald-400" />
@@ -142,10 +167,13 @@ export const Navbar: React.FC<NavbarProps> = ({
 
             {/* User Profile dropdown */}
             {user && (
-              <div className="relative">
+              <div className="relative" ref={menuUsuarioRef}>
                 <button
                   id="btn-user-menu"
                   onClick={() => setMenuUsuarioAberto(!menuUsuarioAberto)}
+                  aria-label="Menu do usuário"
+                  aria-haspopup="true"
+                  aria-expanded={menuUsuarioAberto}
                   className="flex items-center gap-2 p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 transition-all text-xs text-slate-300 cursor-pointer"
                 >
                   {user.photoURL ? (

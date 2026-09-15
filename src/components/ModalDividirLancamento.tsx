@@ -60,6 +60,7 @@ export const ModalDividirLancamento: React.FC<ModalDividirLancamentoProps> = ({
   ]);
 
   const [salvando, setSalvando] = useState(false);
+  const [erroValidacao, setErroValidacao] = useState<string | null>(null);
 
   // Somatório das partes
   const somaPartes = useMemo(() => {
@@ -90,7 +91,7 @@ export const ModalDividirLancamento: React.FC<ModalDividirLancamentoProps> = ({
 
   const handleRemoverParte = (index: number) => {
     if (itens.length <= 2) {
-      alert('A divisão requer no mínimo 2 partes.');
+      setErroValidacao('A divisão requer no mínimo 2 partes.');
       return;
     }
     setItens(itens.filter((_, i) => i !== index));
@@ -104,8 +105,9 @@ export const ModalDividirLancamento: React.FC<ModalDividirLancamentoProps> = ({
 
   const handleSubmeter = async (e: React.FormEvent) => {
     e.preventDefault();
+    setErroValidacao(null);
     if (!saldoValido) {
-      alert(`A soma das partes deve ser exatamente igual ao total (${formatarMoeda(valorTotalOriginal)}). Diferença restante: ${formatarMoeda(diferenca)}`);
+      setErroValidacao(`A soma das partes deve ser exatamente igual ao total (${formatarMoeda(valorTotalOriginal)}). Diferença restante: ${formatarMoeda(diferenca)}`);
       return;
     }
 
@@ -120,7 +122,7 @@ export const ModalDividirLancamento: React.FC<ModalDividirLancamentoProps> = ({
       onClose();
     } catch (err) {
       console.error(err);
-      alert('Erro ao dividir lançamento.');
+      setErroValidacao('Erro ao dividir lançamento. Tente novamente.');
     } finally {
       setSalvando(false);
     }
@@ -128,8 +130,8 @@ export const ModalDividirLancamento: React.FC<ModalDividirLancamentoProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-sm animate-fadeIn">
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-xl overflow-hidden shadow-2xl flex flex-col max-h-[92vh]">
-        
+      <div role="dialog" aria-modal="true" aria-labelledby="modal-dividir-title" className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-xl overflow-hidden shadow-2xl flex flex-col max-h-[92vh]">
+
         {/* Header */}
         <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/60">
           <div className="flex items-center gap-2.5">
@@ -137,12 +139,14 @@ export const ModalDividirLancamento: React.FC<ModalDividirLancamentoProps> = ({
               <Scissors className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-white">Dividir Lançamento em Categorias</h2>
+              <h2 id="modal-dividir-title" className="text-base font-bold text-white">Dividir Lançamento em Categorias</h2>
               <p className="text-xs text-slate-400">Separe um valor único em múltiplas sub-despesas ou categorias</p>
             </div>
           </div>
           <button
             onClick={onClose}
+            title="Fechar"
+            aria-label="Fechar"
             className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
@@ -181,6 +185,7 @@ export const ModalDividirLancamento: React.FC<ModalDividirLancamentoProps> = ({
                       onClick={() => handleRemoverParte(idx)}
                       className="p-1 rounded text-rose-400 hover:text-white hover:bg-rose-600 transition-colors cursor-pointer"
                       title="Remover Parte"
+                      aria-label={`Remover Parte ${idx + 1}`}
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
@@ -264,23 +269,28 @@ export const ModalDividirLancamento: React.FC<ModalDividirLancamentoProps> = ({
           </div>
 
           {/* Footer Actions */}
-          <div className="pt-3 border-t border-slate-800 flex items-center justify-end gap-2">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={salvando}
-              className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium cursor-pointer"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={salvando || !saldoValido}
-              className="px-5 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white text-xs font-bold shadow-lg flex items-center gap-1.5 transition-all cursor-pointer"
-            >
-              <Scissors className="w-4 h-4" />
-              <span>{salvando ? 'Dividindo...' : 'Dividir Lançamento'}</span>
-            </button>
+          <div className="pt-3 border-t border-slate-800 space-y-2">
+            {erroValidacao && (
+              <p role="alert" className="text-xs text-rose-400 font-medium">{erroValidacao}</p>
+            )}
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={salvando}
+                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={salvando || !saldoValido}
+                className="px-5 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white text-xs font-bold shadow-lg flex items-center gap-1.5 transition-all cursor-pointer"
+              >
+                <Scissors className="w-4 h-4" />
+                <span>{salvando ? 'Dividindo…' : 'Dividir Lançamento'}</span>
+              </button>
+            </div>
           </div>
         </form>
 

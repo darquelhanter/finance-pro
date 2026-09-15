@@ -26,7 +26,8 @@ import {
   Minus
 } from 'lucide-react';
 import { CartaoCredito, Categoria, ImportacaoFaturaItem, ExtracaoFaturaResponse } from '../types';
-import { formatarMoeda } from '../utils/format';
+import { formatarMoeda, formatarDataBr } from '../utils/format';
+import { obterTokenAtual } from '../services/firebase/auth.service';
 
 interface ImportacaoFaturaViewProps {
   cartoes?: CartaoCredito[];
@@ -369,9 +370,13 @@ export const ImportacaoFaturaView: React.FC<ImportacaoFaturaViewProps> = ({
 
       let res: Response;
       try {
+        const token = await obterTokenAtual();
         res = await fetch('/api/ia/extrair-fatura', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
           body: JSON.stringify(payload),
         });
       } catch (netErr: any) {
@@ -663,11 +668,20 @@ export const ImportacaoFaturaView: React.FC<ImportacaoFaturaViewProps> = ({
 
                 {!arquivoSelecionado ? (
                   <div
+                    role="button"
+                    tabIndex={0}
+                    aria-label="Escolher ou arrastar arquivo da fatura"
                     onDragOver={handleDragOver}
                     onDragLeave={handleDragLeave}
                     onDrop={handleDrop}
                     onClick={() => fileInputRef.current?.click()}
-                    className={`border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition-all duration-200 ${
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        fileInputRef.current?.click();
+                      }
+                    }}
+                    className={`border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 duration-200 ${
                       isDragging
                         ? 'border-teal-400 bg-teal-500/10 scale-[1.01]'
                         : 'border-slate-800 hover:border-teal-500/50 bg-slate-950/50 hover:bg-slate-950'
@@ -693,7 +707,7 @@ export const ImportacaoFaturaView: React.FC<ImportacaoFaturaViewProps> = ({
                       <div className="flex items-center gap-3 min-w-0">
                         <div className="w-10 h-10 rounded-xl bg-teal-500/20 text-teal-300 flex items-center justify-center shrink-0">
                           {imagemPreview ? (
-                            <img src={imagemPreview} alt="Preview" className="w-full h-full object-cover rounded-xl" />
+                            <img src={imagemPreview} alt="Pré-visualização do arquivo anexado" width={40} height={40} className="w-full h-full object-cover rounded-xl" />
                           ) : (
                             <FileIcon className="w-5 h-5" />
                           )}
@@ -708,6 +722,7 @@ export const ImportacaoFaturaView: React.FC<ImportacaoFaturaViewProps> = ({
                         type="button"
                         onClick={handleRemoverArquivo}
                         title="Remover arquivo"
+                        aria-label="Remover arquivo"
                         className="p-1.5 rounded-lg bg-slate-900 hover:bg-rose-500/20 text-slate-400 hover:text-rose-300 transition-colors cursor-pointer"
                       >
                         <X className="w-4 h-4" />
@@ -754,7 +769,7 @@ export const ImportacaoFaturaView: React.FC<ImportacaoFaturaViewProps> = ({
                 <textarea
                   id="textarea-fatura-texto"
                   rows={8}
-                  placeholder="Cole aqui o texto copiado do app do seu banco ou fatura (Nubank, Itaú, Santander, C6, etc.)..."
+                  placeholder="Cole aqui o texto copiado do app do seu banco ou fatura (Nubank, Itaú, Santander, C6, etc.)…"
                   value={faturaTexto}
                   onChange={(e) => setFaturaTexto(e.target.value)}
                   className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 font-mono focus:outline-none focus:border-teal-500/50 resize-none"
@@ -775,7 +790,7 @@ export const ImportacaoFaturaView: React.FC<ImportacaoFaturaViewProps> = ({
             {carregandoIa ? (
               <>
                 <RefreshCw className="w-4 h-4 animate-spin text-slate-950" />
-                <span>Processando Leitura com IA...</span>
+                <span>Processando Leitura com IA…</span>
               </>
             ) : (
               <>
@@ -1051,7 +1066,7 @@ export const ImportacaoFaturaView: React.FC<ImportacaoFaturaViewProps> = ({
             {carregandoIa ? (
               <div className="py-20 text-center text-slate-400 space-y-3">
                 <RefreshCw className="w-10 h-10 animate-spin text-teal-400 mx-auto" />
-                <p className="text-sm font-bold text-white">Lendo arquivo e estruturando compras...</p>
+                <p className="text-sm font-bold text-white">Lendo arquivo e estruturando compras…</p>
                 <p className="text-xs text-slate-400 max-w-sm mx-auto">
                   A IA Gemini está identificando datas, estabelecimentos, valores, parcelas e categorias.
                 </p>
@@ -1102,7 +1117,7 @@ export const ImportacaoFaturaView: React.FC<ImportacaoFaturaViewProps> = ({
                           {/* Controls Row: Date, Category and Quick Parcel Stepper */}
                           <div className="flex flex-wrap items-center gap-2.5 pt-0.5 text-xs text-slate-400">
                             <span className="font-mono bg-slate-900 px-2 py-0.5 rounded text-[11px] border border-slate-800">
-                              {item.data ? item.data.split('-').reverse().join('/') : '-'}
+                              {formatarDataBr(item.data)}
                             </span>
 
                             {/* Parcel Quick Stepper (Wide and Clear) */}
@@ -1182,11 +1197,11 @@ export const ImportacaoFaturaView: React.FC<ImportacaoFaturaViewProps> = ({
 
           {/* Success Banner */}
           {sucessoImportacao && (
-            <div className="p-3.5 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-200 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-fadeIn">
+            <div role="status" aria-live="polite" className="p-3.5 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-200 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-fadeIn">
               <span className="flex items-center gap-2 font-medium">
                 <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
                 <span>
-                  Lançamentos e parcelamentos importados com sucesso! Conta a Pagar gerada para <b>{dataVencimentoFatura.split('-').reverse().join('/')}</b>.
+                  Lançamentos e parcelamentos importados com sucesso! Conta a Pagar gerada para <b>{formatarDataBr(dataVencimentoFatura)}</b>.
                 </span>
               </span>
               <div className="flex items-center gap-2 shrink-0">
@@ -1210,7 +1225,7 @@ export const ImportacaoFaturaView: React.FC<ImportacaoFaturaViewProps> = ({
 
           {/* Error Banner */}
           {erroMsg && (
-            <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 animate-fadeIn">
+            <div role="alert" className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 animate-fadeIn">
               <div className="flex items-center gap-2">
                 <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
                 <span>{erroMsg}</span>
@@ -1267,6 +1282,8 @@ export const ImportacaoFaturaView: React.FC<ImportacaoFaturaViewProps> = ({
               <button
                 type="button"
                 onClick={() => setItemEmEdicao(null)}
+                title="Fechar"
+                aria-label="Fechar"
                 className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white cursor-pointer"
               >
                 <X className="w-5 h-5" />

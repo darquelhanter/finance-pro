@@ -4,6 +4,44 @@
  */
 
 /**
+ * Normaliza uma descrição de lançamento para comparação (trim + minúsculas).
+ */
+export function normalizarDescricao(descricao?: string): string {
+  return (descricao || '').trim().toLowerCase();
+}
+
+/**
+ * Reduz uma descrição a um slug alfanumérico, usado como parte de chaves de
+ * agrupamento de parcelamento (lancamentoPaiId, chaveGrupo).
+ */
+export function slugificarDescricao(descricao?: string): string {
+  return normalizarDescricao(descricao)
+    .replace(/[^a-z0-9]/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '');
+}
+
+/**
+ * Chave de identidade de um lançamento (descrição normalizada + valor + vencimento),
+ * usada tanto para detectar duplicatas exatas quanto para reconciliar itens ao
+ * reimportar uma fatura — mantida em um único lugar para as duas checagens não divergirem.
+ */
+export function construirChaveLancamento(descricao: string, valor: number, dataVencimento?: string): string {
+  return `${normalizarDescricao(descricao)}_${valor}_${dataVencimento || ''}`;
+}
+
+/**
+ * Formata uma data no formato "YYYY-MM-DD" para o padrão brasileiro "DD/MM/AAAA"
+ * usando Intl.DateTimeFormat (em vez de split/reverse/join manual espalhado pelo app).
+ */
+export function formatarDataBr(data?: string | null): string {
+  if (!data) return '-';
+  const [ano, mes, dia] = data.split('-').map(Number);
+  if (!ano || !mes || !dia) return data;
+  return new Intl.DateTimeFormat('pt-BR').format(new Date(ano, mes - 1, dia));
+}
+
+/**
  * Formata valores numéricos em moeda Real (BRL) de forma segura contra undefined/null/NaN
  */
 export function formatarMoeda(valor?: number | null, incluirSimbolo: boolean = true): string {

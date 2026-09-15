@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { InsightFinanceiro, DashboardResumo } from '../types';
 import { formatarMoeda } from '../utils/format';
+import { obterTokenAtual } from '../services/firebase/auth.service';
 
 interface IaInsightsViewProps {
   resumo?: DashboardResumo;
@@ -37,13 +38,19 @@ export const IaInsightsView: React.FC<IaInsightsViewProps> = ({
 }) => {
   const [insights, setInsights] = useState<InsightFinanceiro[]>([]);
   const [carregando, setCarregando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
 
   const carregarInsights = async () => {
     setCarregando(true);
+    setErro(null);
     try {
+      const token = await obterTokenAtual();
       const res = await fetch('/api/ia/insights', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({ resumo }),
       });
       if (res.ok) {
@@ -52,9 +59,12 @@ export const IaInsightsView: React.FC<IaInsightsViewProps> = ({
           const data = await res.json();
           setInsights(Array.isArray(data) ? data : []);
         }
+      } else {
+        setErro('Não foi possível gerar o diagnóstico agora. Tente novamente.');
       }
     } catch (err) {
       console.error('Falha ao carregar insights:', err);
+      setErro('Falha de conexão ao gerar o diagnóstico. Verifique sua rede e tente novamente.');
     } finally {
       setCarregando(false);
     }
@@ -125,13 +135,24 @@ export const IaInsightsView: React.FC<IaInsightsViewProps> = ({
       {/* Insights Cards List */}
       <div className="space-y-4">
         {carregando ? (
-          <div className="p-12 text-center text-slate-400 text-xs bg-slate-900/50 rounded-2xl border border-slate-800">
+          <div role="status" aria-live="polite" className="p-12 text-center text-slate-400 text-xs bg-slate-900/50 rounded-2xl border border-slate-800">
             <RefreshCw className="w-8 h-8 animate-spin text-indigo-400 mx-auto mb-3" />
-            Analisando fluxo e computando diagnósticos com Gemini 3.7...
+            Analisando fluxo e computando diagnósticos com Gemini 3.7…
+          </div>
+        ) : erro ? (
+          <div role="alert" className="p-12 text-center text-xs bg-slate-900/50 rounded-2xl border border-rose-800/40">
+            <AlertCircle className="w-8 h-8 text-rose-400 mx-auto mb-3" />
+            <p className="text-rose-300 mb-3">{erro}</p>
+            <button
+              onClick={carregarInsights}
+              className="px-4 py-2 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 font-semibold cursor-pointer"
+            >
+              Tentar novamente
+            </button>
           </div>
         ) : insights.length === 0 ? (
           <div className="p-12 text-center text-slate-400 text-xs bg-slate-900/50 rounded-2xl border border-slate-800">
-            Nenhum diagnóstico gerado ainda. Clique em "Atualizar Diagnóstico".
+            Nenhum diagnóstico gerado ainda. Clique em “Atualizar Diagnóstico”.
           </div>
         ) : (
           insights.map((ins, index) => {

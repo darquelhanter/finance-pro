@@ -266,21 +266,22 @@ export const ContasCartoesView: React.FC<ContasCartoesViewProps> = ({
       {/* Modal Nova Conta */}
       {modalContaAberto && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl shadow-2xl p-5 space-y-4 text-xs">
+          <div role="dialog" aria-modal="true" aria-labelledby="modal-nova-conta-title" className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl shadow-2xl p-5 space-y-4 text-xs">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <h3 className="text-base font-bold text-white">Adicionar Conta Bancária</h3>
-              <button onClick={() => setModalContaAberto(false)} className="text-slate-400 hover:text-white">
+              <h3 id="modal-nova-conta-title" className="text-base font-bold text-white">Adicionar Conta Bancária</h3>
+              <button onClick={() => setModalContaAberto(false)} title="Fechar" aria-label="Fechar" className="text-slate-400 hover:text-white">
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             <form onSubmit={handleSalvarConta} className="space-y-3">
               <div className="space-y-1">
-                <label className="text-slate-300 font-medium">Nome da Conta *</label>
+                <label htmlFor="input-nome-conta" className="text-slate-300 font-medium">Nome da Conta *</label>
                 <input
+                  id="input-nome-conta"
                   type="text"
                   required
-                  placeholder="Ex: Banco Inter PJ, Bradesco..."
+                  placeholder="Ex: Banco Inter PJ, Bradesco…"
                   value={nomeConta}
                   onChange={(e) => setNomeConta(e.target.value)}
                   className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white focus:outline-none focus:border-emerald-500"
@@ -289,8 +290,9 @@ export const ContasCartoesView: React.FC<ContasCartoesViewProps> = ({
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="text-slate-300 font-medium">Tipo</label>
+                  <label htmlFor="select-tipo-conta" className="text-slate-300 font-medium">Tipo</label>
                   <select
+                    id="select-tipo-conta"
                     value={tipoConta}
                     onChange={(e) => setTipoConta(e.target.value as any)}
                     className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-slate-300 focus:outline-none focus:border-emerald-500"
@@ -303,8 +305,9 @@ export const ContasCartoesView: React.FC<ContasCartoesViewProps> = ({
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-slate-300 font-medium">Saldo Inicial (R$)</label>
+                  <label htmlFor="input-saldo-inicial" className="text-slate-300 font-medium">Saldo Inicial (R$)</label>
                   <input
+                    id="input-saldo-inicial"
                     type="number"
                     step="0.01"
                     placeholder="0,00"
@@ -338,21 +341,22 @@ export const ContasCartoesView: React.FC<ContasCartoesViewProps> = ({
       {/* Modal Novo Cartão */}
       {modalCartaoAberto && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl shadow-2xl p-5 space-y-4 text-xs">
+          <div role="dialog" aria-modal="true" aria-labelledby="modal-novo-cartao-title" className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl shadow-2xl p-5 space-y-4 text-xs">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <h3 className="text-base font-bold text-white">Adicionar Cartão de Crédito</h3>
-              <button onClick={() => setModalCartaoAberto(false)} className="text-slate-400 hover:text-white">
+              <h3 id="modal-novo-cartao-title" className="text-base font-bold text-white">Adicionar Cartão de Crédito</h3>
+              <button onClick={() => setModalCartaoAberto(false)} title="Fechar" aria-label="Fechar" className="text-slate-400 hover:text-white">
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             <form onSubmit={handleSalvarCartao} className="space-y-3">
               <div className="space-y-1">
-                <label className="text-slate-300 font-medium">Nome do Cartão *</label>
+                <label htmlFor="input-nome-cartao" className="text-slate-300 font-medium">Nome do Cartão *</label>
                 <input
+                  id="input-nome-cartao"
                   type="text"
                   required
-                  placeholder="Ex: C6 Carbon Mastercard Black..."
+                  placeholder="Ex: C6 Carbon Mastercard Black…"
                   value={nomeCartao}
                   onChange={(e) => setNomeCartao(e.target.value)}
                   className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white focus:outline-none focus:border-indigo-500"
@@ -361,8 +365,9 @@ export const ContasCartoesView: React.FC<ContasCartoesViewProps> = ({
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="text-slate-300 font-medium">Bandeira</label>
+                  <label htmlFor="select-bandeira-cartao" className="text-slate-300 font-medium">Bandeira</label>
                   <select
+                    id="select-bandeira-cartao"
                     value={bandeiraCartao}
                     onChange={(e) => setBandeiraCartao(e.target.value as any)}
                     className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-slate-300 focus:outline-none"
@@ -375,8 +380,9 @@ export const ContasCartoesView: React.FC<ContasCartoesViewProps> = ({
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-slate-300 font-medium">Limite Total (R$)</label>
+                  <label htmlFor="input-limite-total" className="text-slate-300 font-medium">Limite Total (R$)</label>
                   <input
+                    id="input-limite-total"
                     type="number"
                     step="0.01"
                     placeholder="10000,00"
@@ -389,8 +395,9 @@ export const ContasCartoesView: React.FC<ContasCartoesViewProps> = ({
 
               <div className="grid grid-cols-3 gap-2">
                 <div className="space-y-1">
-                  <label className="text-slate-300 font-medium">Fechamento</label>
+                  <label htmlFor="input-dia-fechamento" className="text-slate-300 font-medium">Fechamento</label>
                   <input
+                    id="input-dia-fechamento"
                     type="number"
                     min="1"
                     max="31"
@@ -400,8 +407,9 @@ export const ContasCartoesView: React.FC<ContasCartoesViewProps> = ({
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-slate-300 font-medium">Vencimento</label>
+                  <label htmlFor="input-dia-vencimento" className="text-slate-300 font-medium">Vencimento</label>
                   <input
+                    id="input-dia-vencimento"
                     type="number"
                     min="1"
                     max="31"
@@ -411,8 +419,9 @@ export const ContasCartoesView: React.FC<ContasCartoesViewProps> = ({
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-slate-300 font-medium">Final Dígitos</label>
+                  <label htmlFor="input-ultimos-digitos" className="text-slate-300 font-medium">Final Dígitos</label>
                   <input
+                    id="input-ultimos-digitos"
                     type="text"
                     maxLength={4}
                     placeholder="1234"

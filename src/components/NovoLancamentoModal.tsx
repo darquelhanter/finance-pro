@@ -21,6 +21,7 @@ import {
 import { Conta, CartaoCredito, Categoria, FrequenciaRecorrencia, TipoLancamento } from '../types';
 import { LancamentoService } from '../services/domain/lancamento.service';
 import { RecorrenciaService } from '../services/domain/recorrencia.service';
+import { formatarMoeda, formatarDataBr } from '../utils/format';
 
 interface NovoLancamentoModalProps {
   isOpen: boolean;
@@ -89,6 +90,15 @@ export const NovoLancamentoModal: React.FC<NovoLancamentoModalProps> = ({
     return RecorrenciaService.gerarProjecaoDatas(dataVencimento, frequencia, 4);
   }, [dataVencimento, frequencia]);
 
+  React.useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -133,16 +143,18 @@ export const NovoLancamentoModal: React.FC<NovoLancamentoModalProps> = ({
 
   return (
     <div id="modal-novo-lancamento" className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fadeIn">
-      <div className="bg-slate-900 border border-slate-800 w-full max-w-xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-        
+      <div role="dialog" aria-modal="true" aria-labelledby="modal-novo-lancamento-title" className="bg-slate-900 border border-slate-800 w-full max-w-xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+
         {/* Header */}
         <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-950/40">
           <div>
-            <h2 className="text-lg font-bold text-white">Criar Novo Lançamento</h2>
+            <h2 id="modal-novo-lancamento-title" className="text-lg font-bold text-white">Criar Novo Lançamento</h2>
             <p className="text-xs text-slate-400">Motor de regras do Finance Pro</p>
           </div>
           <button
             onClick={onClose}
+            title="Fechar"
+            aria-label="Fechar"
             className="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
           >
             <X className="w-4 h-4" />
@@ -310,7 +322,7 @@ export const NovoLancamentoModal: React.FC<NovoLancamentoModalProps> = ({
               >
                 {contas.map((c) => (
                   <option key={c.id} value={c.id}>
-                    {c.nome} (Saldo: R$ {c.saldoAtual.toFixed(2)})
+                    {c.nome} (Saldo: {formatarMoeda(c.saldoAtual)})
                   </option>
                 ))}
               </select>
@@ -323,7 +335,7 @@ export const NovoLancamentoModal: React.FC<NovoLancamentoModalProps> = ({
               >
                 {cartoes.map((car) => (
                   <option key={car.id} value={car.id}>
-                    {car.nome} (Limite Disp: R$ {car.limiteDisponivel.toFixed(2)})
+                    {car.nome} (Limite Disp: {formatarMoeda(car.limiteDisponivel)})
                   </option>
                 ))}
               </select>
@@ -385,8 +397,8 @@ export const NovoLancamentoModal: React.FC<NovoLancamentoModalProps> = ({
                   <div className="max-h-28 overflow-y-auto space-y-1 pr-1">
                     {parcelasSimuladas.map((p) => (
                       <div key={p.numero} className="flex items-center justify-between p-1.5 rounded-lg bg-slate-950/60 text-[11px] font-mono">
-                        <span className="text-slate-300">Parcela {p.numero}/{p.total} • Venc: {p.data.split('-').reverse().join('/')}</span>
-                        <span className="text-indigo-300 font-bold">R$ {p.valor.toFixed(2)}</span>
+                        <span className="text-slate-300">Parcela {p.numero}/{p.total} • Venc: {formatarDataBr(p.data)}</span>
+                        <span className="text-indigo-300 font-bold">{formatarMoeda(p.valor)}</span>
                       </div>
                     ))}
                   </div>
@@ -434,7 +446,7 @@ export const NovoLancamentoModal: React.FC<NovoLancamentoModalProps> = ({
                 <div className="flex flex-wrap gap-1.5 mt-1">
                   {projecaoRecorrencia.map((dt, i) => (
                     <span key={i} className="px-2 py-0.5 rounded bg-slate-950 text-amber-300 font-mono text-[10px]">
-                      {dt.split('-').reverse().join('/')}
+                      {formatarDataBr(dt)}
                     </span>
                   ))}
                 </div>

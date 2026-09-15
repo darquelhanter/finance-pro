@@ -4,6 +4,8 @@
  */
 
 import { Lancamento, CartaoCredito, Categoria } from '../types';
+import { slugificarDescricao } from './format';
+import { RecorrenciaService } from '../services/domain/recorrencia.service';
 
 export interface CompraParceladaAgrupada {
   id: string;
@@ -188,13 +190,21 @@ export class ParcelamentoService {
       return true;
     });
 
+    // Calcula a descrição/parcela extraída de cada lançamento uma única vez e reaproveita
+    // abaixo (agrupamento, ordenação e detecção da parcela mais avançada) em vez de
+    // re-parsear a mesma descrição com regex repetidamente.
+    const infoCache = new Map<string, ReturnType<typeof ParcelamentoService.extrairInfoDescricao>>();
+    for (const lanc of lancamentosRelevantes) {
+      infoCache.set(lanc.id, this.extrairInfoDescricao(lanc.descricao));
+    }
+
     for (const lanc of lancamentosRelevantes) {
       let chaveGrupo = '';
 
-      const { descricaoBase, parcelaAtual, totalParcelas } = this.extrairInfoDescricao(lanc.descricao);
+      const { descricaoBase, parcelaAtual, totalParcelas } = infoCache.get(lanc.id)!;
       const numParc = lanc.parcela?.numero || parcelaAtual;
       const totParc = lanc.parcela?.total || totalParcelas;
-      const nomeLimpo = (descricaoBase || lanc.descricao).toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_').trim();
+      const nomeLimpo = slugificarDescricao(descricaoBase || lanc.descricao);
 
       if (lanc.parcela?.lancamentoPaiId) {
         chaveGrupo = `pai_${lanc.parcela.lancamentoPaiId}`;
@@ -218,39 +228,30 @@ export class ParcelamentoService {
     for (const [chave, itens] of gruposMap.entries()) {
       // Ordena itens por vencimento ou número de parcela
       itens.sort((a, b) => {
-        const numA = a.parcela?.numero || this.extrairInfoDescricao(a.descricao).parcelaAtual || 0;
-        const numB = b.parcela?.numero || this.extrairInfoDescricao(b.descricao).parcelaAtual || 0;
+        const numA = a.parcela?.numero || infoCache.get(a.id)?.parcelaAtual || 0;
+        const numB = b.parcela?.numero || infoCache.get(b.id)?.parcelaAtual || 0;
         if (numA !== numB) return numA - numB;
         return (a.dataVencimento || '').localeCompare(b.dataVencimento || '');
       });
 
       const primeiro = itens[0];
       const ultimo = itens[itens.length - 1];
-      const { descricaoBase } = this.extrairInfoDescricao(primeiro.descricao);
-      
+      const descricaoBase = infoCache.get(primeiro.id)?.descricaoBase;
+
       const totalParcelasDetectado =
         itens.reduce((max, i) => {
-          const tot = i.parcela?.total || this.extrairInfoDescricao(i.descricao).totalParcelas || 0;
+          const tot = i.parcela?.total || infoCache.get(i.id)?.totalParcelas || 0;
           return Math.max(max, tot);
         }, 0) ||
         primeiro.parcela?.total ||
-        this.extrairInfoDescricao(primeiro.descricao).totalParcelas ||
+        infoCache.get(primeiro.id)?.totalParcelas ||
         itens.length;
 
       const valorParcela = Number(ultimo.valor || primeiro.valor) || 0;
       const valorTotalOriginal = valorParcela * totalParcelasDetectado;
 
       // O número de parcela mais recente que o usuário já alcançou/faturou nesta fatura ou no banco (ex: 04/04 -> 4, 05/05 -> 5, 02/06 -> 2)
-      let maxParcelaRegistrada = 0;
-      let itemMaisRecente = itens[0];
-
-      for (const it of itens) {
-        const num = it.parcela?.numero || this.extrairInfoDescricao(it.descricao).parcelaAtual || 1;
-        if (num >= maxParcelaRegistrada) {
-          maxParcelaRegistrada = num;
-          itemMaisRecente = it;
-        }
-      }
+      const { item: itemMaisRecente, numero: maxParcelaRegistrada } = this.encontrarItemMaisAvancado(itens, infoCache);
 
       const parcelasPagasCount = itens.filter((i) => i.status === 'pago').length;
       
@@ -266,11 +267,11 @@ export class ParcelamentoService {
       const dataRef = itemMaisRecente.dataVencimento || itemMaisRecente.dataCompetencia || hoje.toISOString().split('T')[0];
       let dataTermino = dataRef;
 
-      // Projeta a data final de quitação com base no número de parcelas restantes
+      // Projeta a data final de quitação com base no número de parcelas restantes,
+      // reaproveitando o RecorrenciaService (já trata corretamente o ajuste de fim de mês).
       if (restantes > 0 && dataRef) {
-        const [a, m, d] = dataRef.split('-').map(Number);
-        const dataProjetada = new Date(a, m - 1 + restantes, d || 10);
-        dataTermino = dataProjetada.toISOString().split('T')[0];
+        const datasProjetadas = RecorrenciaService.gerarProjecaoDatas(dataRef, 'mensal', restantes + 1);
+        dataTermino = datasProjetadas[datasProjetadas.length - 1];
       }
 
       let mesTerminoFormatado = '';
@@ -313,6 +314,28 @@ export class ParcelamentoService {
     });
 
     return resultado;
+  }
+
+  /**
+   * Encontra, dentro de um grupo de itens de uma mesma compra parcelada, o item com o
+   * maior número de parcela já registrado — usado tanto para agrupar quanto para projetar
+   * meses futuros, para que as duas visões nunca divirjam sobre qual é "a parcela mais recente".
+   */
+  private static encontrarItemMaisAvancado(
+    itens: Lancamento[],
+    infoCache?: Map<string, ReturnType<typeof ParcelamentoService.extrairInfoDescricao>>
+  ): { item: Lancamento; numero: number } {
+    let numeroMax = 0;
+    let itemEscolhido = itens[0];
+    for (const it of itens) {
+      const info = infoCache?.get(it.id) ?? this.extrairInfoDescricao(it.descricao);
+      const numero = it.parcela?.numero || info.parcelaAtual || 1;
+      if (numero >= numeroMax) {
+        numeroMax = numero;
+        itemEscolhido = it;
+      }
+    }
+    return { item: itemEscolhido, numero: numeroMax };
   }
 
   /**
@@ -394,15 +417,7 @@ export class ParcelamentoService {
 
         // Projeta as parcelas futuras restantes a partir da data de referência do último lançamento faturado
         if (grupo.itens.length > 0 && grupo.parcelasRestantes > 0) {
-          let itemUltimo = grupo.itens[0];
-          let maxParcNum = 1;
-          for (const it of grupo.itens) {
-            const num = it.parcela?.numero || this.extrairInfoDescricao(it.descricao).parcelaAtual || 1;
-            if (num >= maxParcNum) {
-              maxParcNum = num;
-              itemUltimo = it;
-            }
-          }
+          const { item: itemUltimo, numero: maxParcNum } = this.encontrarItemMaisAvancado(grupo.itens);
 
           const dataRef = itemUltimo.dataVencimento || itemUltimo.dataCompetencia || hoje.toISOString().split('T')[0];
           const [anoRef, mesRef] = dataRef.split('-').map(Number);

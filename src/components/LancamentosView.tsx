@@ -40,7 +40,7 @@ import {
   Edit3
 } from 'lucide-react';
 import { Lancamento, Conta, CartaoCredito, Categoria, StatusLancamento, TipoLancamento } from '../types';
-import { formatarMoeda, isItemInformativoFatura } from '../utils/format';
+import { formatarMoeda, formatarDataBr, isItemInformativoFatura } from '../utils/format';
 import { CategoryIcon } from '../utils/categoryIcons';
 import { ModalDetalhesLancamento } from './ModalDetalhesLancamento';
 import { ModalDividirLancamento } from './ModalDividirLancamento';
@@ -374,12 +374,22 @@ export const LancamentosView: React.FC<LancamentosViewProps> = ({
     showNotification('Lançamento convertido em Conta a Pagar Real (Boleto/Despesa Direta)!');
   };
 
+  const handleExcluir = (id: string) => {
+    if (!window.confirm('Excluir este lançamento permanentemente? Esta ação não pode ser desfeita.')) return;
+    onExcluir(id);
+  };
+
+  const handleCancelar = (id: string) => {
+    if (!window.confirm('Cancelar este lançamento?')) return;
+    onCancelar(id);
+  };
+
   return (
     <div id="lancamentos-view" className="space-y-6 animate-fadeIn pb-24">
       
       {/* Toast Notification */}
       {notification && (
-        <div className="bg-emerald-500/90 text-white text-xs font-semibold px-4 py-2.5 rounded-xl shadow-lg flex items-center gap-2 animate-bounce">
+        <div role="status" aria-live="polite" className="bg-emerald-500/90 text-white text-xs font-semibold px-4 py-2.5 rounded-xl shadow-lg flex items-center gap-2 animate-bounce">
           <CheckCircle2 className="w-4 h-4" />
           <span>{notification}</span>
         </div>
@@ -1037,7 +1047,7 @@ export const LancamentosView: React.FC<LancamentosViewProps> = ({
                         <td className="px-4 py-3.5 whitespace-nowrap text-slate-300 font-mono text-[11px]">
                           <div className="flex flex-col items-start gap-0.5">
                             <span className="px-2 py-0.5 rounded-lg bg-slate-950 border border-slate-800">
-                              {lanc.dataVencimento ? lanc.dataVencimento.split('-').reverse().join('/') : '-'}
+                              {formatarDataBr(lanc.dataVencimento)}
                             </span>
                             {lanc.status === 'pendente' && lanc.dataVencimento && lanc.dataVencimento < hoje && (
                               <span className="text-[10px] text-amber-400 font-sans font-semibold flex items-center gap-0.5" title="Conta vencida">
@@ -1047,7 +1057,7 @@ export const LancamentosView: React.FC<LancamentosViewProps> = ({
                             )}
                             {lanc.status === 'pago' && lanc.dataPagamento && (
                               <span className="text-[10px] text-slate-500 font-sans">
-                                Pago: {lanc.dataPagamento.split('-').reverse().join('/')}
+                                Pago: {formatarDataBr(lanc.dataPagamento)}
                               </span>
                             )}
                           </div>
@@ -1081,6 +1091,7 @@ export const LancamentosView: React.FC<LancamentosViewProps> = ({
                             <button
                               onClick={() => setItemEmEdicao(lanc)}
                               title="Visualizar e editar dados desta despesa"
+                              aria-label="Visualizar e editar dados desta despesa"
                               className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors cursor-pointer"
                             >
                               <Eye className="w-3.5 h-3.5" />
@@ -1091,6 +1102,7 @@ export const LancamentosView: React.FC<LancamentosViewProps> = ({
                               <button
                                 onClick={() => onDuplicarLancamento(lanc)}
                                 title="Duplicar este lançamento"
+                                aria-label="Duplicar este lançamento"
                                 className="p-1.5 rounded-lg bg-slate-800 hover:bg-indigo-600/30 text-slate-400 hover:text-indigo-300 transition-colors cursor-pointer"
                               >
                                 <Copy className="w-3.5 h-3.5" />
@@ -1102,6 +1114,7 @@ export const LancamentosView: React.FC<LancamentosViewProps> = ({
                               <button
                                 onClick={() => setLancamentoParaDividir(lanc)}
                                 title="Dividir este lançamento em múltiplas categorias"
+                                aria-label="Dividir este lançamento em múltiplas categorias"
                                 className="p-1.5 rounded-lg bg-slate-800 hover:bg-amber-600/30 text-slate-400 hover:text-amber-300 transition-colors cursor-pointer"
                               >
                                 <Scissors className="w-3.5 h-3.5" />
@@ -1139,6 +1152,7 @@ export const LancamentosView: React.FC<LancamentosViewProps> = ({
                               <button
                                 onClick={(e) => handleConverterDireto(lanc.id, e)}
                                 title="Converter este item em Conta a Pagar Real (Boleto/Despesa Direta)"
+                                aria-label="Converter este item em Conta a Pagar Real (Boleto/Despesa Direta)"
                                 className="p-1.5 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/30 text-indigo-300 transition-colors cursor-pointer"
                               >
                                 <ArrowRightLeft className="w-3.5 h-3.5" />
@@ -1149,8 +1163,9 @@ export const LancamentosView: React.FC<LancamentosViewProps> = ({
                             {lanc.status === 'pendente' && (
                               <button
                                 id={`btn-cancelar-${lanc.id}`}
-                                onClick={() => onCancelar(lanc.id)}
+                                onClick={() => handleCancelar(lanc.id)}
                                 title="Cancelar lançamento"
+                                aria-label="Cancelar lançamento"
                                 className="p-1.5 rounded-lg bg-slate-800 hover:bg-rose-500/20 text-slate-400 hover:text-rose-300 transition-colors cursor-pointer"
                               >
                                 <XCircle className="w-3.5 h-3.5" />
@@ -1160,8 +1175,9 @@ export const LancamentosView: React.FC<LancamentosViewProps> = ({
                             {/* Botão Excluir */}
                             <button
                               id={`btn-excluir-${lanc.id}`}
-                              onClick={() => onExcluir(lanc.id)}
+                              onClick={() => handleExcluir(lanc.id)}
                               title="Excluir lançamento permanentemente"
+                              aria-label="Excluir lançamento permanentemente"
                               className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500 text-rose-400 hover:text-white transition-colors cursor-pointer"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
@@ -1204,7 +1220,7 @@ export const LancamentosView: React.FC<LancamentosViewProps> = ({
                                       return (
                                         <tr key={compra.id} className="hover:bg-slate-800/30">
                                           <td className="py-2 px-3 font-mono text-slate-400 text-[11px]">
-                                            {compra.dataVencimento ? compra.dataVencimento.split('-').reverse().join('/') : '-'}
+                                            {formatarDataBr(compra.dataVencimento)}
                                           </td>
                                           <td className="py-2 px-3">
                                             <button
@@ -1237,6 +1253,7 @@ export const LancamentosView: React.FC<LancamentosViewProps> = ({
                                               <button
                                                 onClick={() => setItemEmEdicao(compra)}
                                                 title="Ver dados desta compra"
+                                                aria-label="Ver dados desta compra"
                                                 className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300"
                                               >
                                                 <Eye className="w-3 h-3" />
@@ -1245,14 +1262,16 @@ export const LancamentosView: React.FC<LancamentosViewProps> = ({
                                                 <button
                                                   onClick={(e) => handleConverterDireto(compra.id, e)}
                                                   title="Converter em boleto/conta a pagar separada"
+                                                  aria-label="Converter em boleto/conta a pagar separada"
                                                   className="p-1 rounded bg-indigo-500/10 hover:bg-indigo-500/30 text-indigo-300"
                                                 >
                                                   <ArrowRightLeft className="w-3 h-3" />
                                                 </button>
                                               )}
                                               <button
-                                                onClick={() => onExcluir(compra.id)}
+                                                onClick={() => handleExcluir(compra.id)}
                                                 title="Excluir compra"
+                                                aria-label="Excluir compra"
                                                 className="p-1 rounded bg-rose-500/10 hover:bg-rose-500 text-rose-400 hover:text-white"
                                               >
                                                 <Trash2 className="w-3 h-3" />

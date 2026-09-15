@@ -42,7 +42,7 @@ import {
   ComposedChart
 } from 'recharts';
 import { CartaoCredito, Categoria, Lancamento } from '../types';
-import { formatarMoeda } from '../utils/format';
+import { formatarMoeda, slugificarDescricao } from '../utils/format';
 import { ParcelamentoService, CompraParceladaAgrupada, ProjecaoMesFuturo } from '../utils/parcelas';
 
 interface FaturasParcelamentosViewProps {
@@ -169,7 +169,7 @@ export const FaturasParcelamentosView: React.FC<FaturasParcelamentosViewProps> =
       const updates = lancamentosNaoEstruturados.map((it) => {
         const pAtual = it.parcelaAtual;
         const pTotal = it.totalParcelas;
-        const slug = it.descricaoLimpa.toLowerCase().replace(/[^a-z0-9]/g, '_');
+        const slug = slugificarDescricao(it.descricaoLimpa);
         const paiId = `parc_sync_${slug}_${it.lancamento.cartaoId || 'cartao'}_${pTotal}`;
 
         return {
@@ -612,9 +612,19 @@ export const FaturasParcelamentosView: React.FC<FaturasParcelamentosViewProps> =
                     }`}
                   >
                     {/* Header do Mês */}
-                    <div 
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      aria-expanded={isExpandido}
+                      aria-label={`${isExpandido ? 'Recolher' : 'Expandir'} ${mes.rotuloMes}`}
                       onClick={() => setMesExpandido(isExpandido ? null : mes.anoMes)}
-                      className="p-4 flex items-center justify-between cursor-pointer"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          setMesExpandido(isExpandido ? null : mes.anoMes);
+                        }
+                      }}
+                      className="p-4 flex items-center justify-between cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 rounded-2xl"
                     >
                       <div className="flex items-center gap-3">
                         <div className={`w-10 h-10 rounded-xl flex flex-col items-center justify-center font-bold text-xs ${
@@ -650,9 +660,9 @@ export const FaturasParcelamentosView: React.FC<FaturasParcelamentosViewProps> =
                             {formatarMoeda(mes.valorTotal)}
                           </span>
                         </div>
-                        <button className="text-slate-400 hover:text-white">
+                        <span aria-hidden="true" className="text-slate-400 hover:text-white">
                           {isExpandido ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                        </button>
+                        </span>
                       </div>
                     </div>
 
@@ -1117,10 +1127,10 @@ export const FaturasParcelamentosView: React.FC<FaturasParcelamentosViewProps> =
       {/* 8. MODAL DE CADASTRO RÁPIDO DE COMPRA PARCELADA */}
       {modalNovaCompraAberto && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-slate-900 border border-slate-800 w-full max-w-lg rounded-2xl shadow-2xl p-6 space-y-4 text-xs">
+          <div role="dialog" aria-modal="true" aria-labelledby="modal-nova-compra-title" className="bg-slate-900 border border-slate-800 w-full max-w-lg rounded-2xl shadow-2xl p-6 space-y-4 text-xs">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div>
-                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <h3 id="modal-nova-compra-title" className="text-base font-bold text-white flex items-center gap-2">
                   <PlusCircle className="w-4 h-4 text-indigo-400" />
                   Cadastrar Compra Parcelada
                 </h3>
@@ -1130,6 +1140,8 @@ export const FaturasParcelamentosView: React.FC<FaturasParcelamentosViewProps> =
               </div>
               <button
                 onClick={() => setModalNovaCompraAberto(false)}
+                title="Fechar"
+                aria-label="Fechar"
                 className="text-slate-400 hover:text-white"
               >
                 ✕
@@ -1138,11 +1150,12 @@ export const FaturasParcelamentosView: React.FC<FaturasParcelamentosViewProps> =
 
             <form onSubmit={handleSalvarNovaCompraParcelada} className="space-y-4">
               <div className="space-y-1">
-                <label className="text-slate-300 font-medium">Descrição da Compra *</label>
+                <label htmlFor="input-nova-compra-descricao" className="text-slate-300 font-medium">Descrição da Compra *</label>
                 <input
+                  id="input-nova-compra-descricao"
                   type="text"
                   required
-                  placeholder="Ex: Notebook Dell Inspiron, iPhone 15..."
+                  placeholder="Ex: Notebook Dell Inspiron, iPhone 15…"
                   value={novaDescricao}
                   onChange={(e) => setNovaDescricao(e.target.value)}
                   className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white focus:outline-none focus:border-indigo-500"
@@ -1151,8 +1164,9 @@ export const FaturasParcelamentosView: React.FC<FaturasParcelamentosViewProps> =
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="text-slate-300 font-medium">Valor Total (R$) *</label>
+                  <label htmlFor="input-nova-compra-valor" className="text-slate-300 font-medium">Valor Total (R$) *</label>
                   <input
+                    id="input-nova-compra-valor"
                     type="number"
                     step="0.01"
                     required
@@ -1164,8 +1178,9 @@ export const FaturasParcelamentosView: React.FC<FaturasParcelamentosViewProps> =
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-slate-300 font-medium">Nº de Parcelas *</label>
+                  <label htmlFor="select-nova-compra-parcelas" className="text-slate-300 font-medium">Nº de Parcelas *</label>
                   <select
+                    id="select-nova-compra-parcelas"
                     value={novoNumeroParcelas}
                     onChange={(e) => setNovoNumeroParcelas(Number(e.target.value))}
                     className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white focus:outline-none focus:border-indigo-500"
@@ -1181,8 +1196,9 @@ export const FaturasParcelamentosView: React.FC<FaturasParcelamentosViewProps> =
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="text-slate-300 font-medium">Cartão de Crédito</label>
+                  <label htmlFor="select-nova-compra-cartao" className="text-slate-300 font-medium">Cartão de Crédito</label>
                   <select
+                    id="select-nova-compra-cartao"
                     value={novoCartaoId}
                     onChange={(e) => setNovoCartaoId(e.target.value)}
                     className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-slate-300 focus:outline-none focus:border-indigo-500"
@@ -1197,8 +1213,9 @@ export const FaturasParcelamentosView: React.FC<FaturasParcelamentosViewProps> =
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-slate-300 font-medium">Categoria</label>
+                  <label htmlFor="select-nova-compra-categoria" className="text-slate-300 font-medium">Categoria</label>
                   <select
+                    id="select-nova-compra-categoria"
                     value={novaCategoriaId}
                     onChange={(e) => setNovaCategoriaId(e.target.value)}
                     className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-slate-300 focus:outline-none focus:border-indigo-500"
@@ -1213,8 +1230,9 @@ export const FaturasParcelamentosView: React.FC<FaturasParcelamentosViewProps> =
               </div>
 
               <div className="space-y-1">
-                <label className="text-slate-300 font-medium">Vencimento da 1ª Parcela</label>
+                <label htmlFor="input-nova-compra-vencimento" className="text-slate-300 font-medium">Vencimento da 1ª Parcela</label>
                 <input
+                  id="input-nova-compra-vencimento"
                   type="date"
                   value={novaDataPrimeiroVenc}
                   onChange={(e) => setNovaDataPrimeiroVenc(e.target.value)}

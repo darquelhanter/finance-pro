@@ -124,7 +124,9 @@ export const OrcamentosView: React.FC<OrcamentosViewProps> = ({
                     <span className="text-slate-400">Teto Orçado:</span>
                     {editingId === cat.id ? (
                       <div className="flex items-center gap-1">
+                        <label htmlFor={`input-orcamento-${cat.id}`} className="sr-only">Teto orçado para {cat.nome}</label>
                         <input
+                          id={`input-orcamento-${cat.id}`}
                           type="number"
                           step="50"
                           value={editValue}
@@ -140,14 +142,16 @@ export const OrcamentosView: React.FC<OrcamentosViewProps> = ({
                         </button>
                       </div>
                     ) : (
-                      <span 
+                      <button
+                        type="button"
                         onClick={() => startEdit(cat)}
-                        className="font-mono text-emerald-400 font-semibold cursor-pointer hover:underline flex items-center gap-1"
+                        className="font-mono text-emerald-400 font-semibold cursor-pointer hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 rounded flex items-center gap-1"
                         title="Clique para editar meta"
+                        aria-label={`Editar teto orçado de ${cat.nome}, atual ${meta > 0 ? formatarMoeda(meta) : 'não definido'}`}
                       >
                         {meta > 0 ? formatarMoeda(meta) : 'Não definido'}
                         <Edit3 className="w-3 h-3 opacity-60" />
-                      </span>
+                      </button>
                     )}
                   </div>
                 </div>

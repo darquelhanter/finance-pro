@@ -25,7 +25,7 @@ import {
   Plus
 } from 'lucide-react';
 import { Lancamento, Conta, CartaoCredito, Categoria, StatusLancamento, TipoLancamento } from '../types';
-import { formatarMoeda } from '../utils/format';
+import { formatarMoeda, formatarDataBr } from '../utils/format';
 import { CategoryIcon } from '../utils/categoryIcons';
 
 interface ModalDetalhesLancamentoProps {
@@ -162,6 +162,8 @@ export const ModalDetalhesLancamento: React.FC<ModalDetalhesLancamentoProps> = (
 
             <button
               onClick={onClose}
+              title="Fechar"
+              aria-label="Fechar"
               className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-colors cursor-pointer"
             >
               <X className="w-5 h-5" />
@@ -294,7 +296,7 @@ export const ModalDetalhesLancamento: React.FC<ModalDetalhesLancamentoProps> = (
               {lancamento.dataPagamento && (
                 <div className="flex items-center justify-between text-slate-400 pt-1 border-t border-slate-800/80">
                   <span>Data da Liquidação:</span>
-                  <span className="font-mono text-slate-200">{lancamento.dataPagamento.split('-').reverse().join('/')}</span>
+                  <span className="font-mono text-slate-200">{formatarDataBr(lancamento.dataPagamento)}</span>
                 </div>
               )}
               <div className="flex items-center justify-between pt-1 border-t border-slate-800 font-bold text-white">
@@ -417,11 +419,12 @@ export const ModalDetalhesLancamento: React.FC<ModalDetalhesLancamentoProps> = (
 
           {/* Opção de Visualização */}
           <div className="pt-2 border-t border-slate-800/60 flex items-center justify-between">
-            <div>
+            <label htmlFor="checkbox-modo-informativo" className="cursor-pointer">
               <span className="text-xs font-semibold text-slate-300 block">Modo Informativo</span>
               <span className="text-[11px] text-slate-500">Se ativo, serve apenas como extrato sem somar nas despesas a pagar</span>
-            </div>
+            </label>
             <input
+              id="checkbox-modo-informativo"
               type="checkbox"
               checked={apenasVisualizacao}
               onChange={(e) => setApenasVisualizacao(e.target.checked)}
