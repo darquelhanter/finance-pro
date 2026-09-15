@@ -13,7 +13,8 @@ import { exigirUsuarioAutenticado } from './src/services/firebase/admin.auth';
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  // Cloud Run injects PORT (normally 8080) and requires the container to listen on it.
+  const PORT = Number(process.env.PORT) || 3000;
 
   app.use(express.json({ limit: '50mb' }));
   app.use(express.urlencoded({ limit: '50mb', extended: true }));
