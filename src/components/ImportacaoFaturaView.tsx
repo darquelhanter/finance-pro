@@ -431,24 +431,34 @@ export const ImportacaoFaturaView: React.FC<ImportacaoFaturaViewProps> = ({
       const emissorLower = emissorLido.toLowerCase();
       const textoCompleto = itemsList.map((i: any) => (i.descricao || '').toLowerCase()).join(' ');
 
-      const isContaServicoOuBoleto = 
-        data.tipoDocumento === 'boleto_cobranca' || 
-        emissorLower.includes('vivo') || 
-        emissorLower.includes('claro') || 
-        emissorLower.includes('tim') || 
-        emissorLower.includes('oi') || 
-        emissorLower.includes('copel') || 
-        emissorLower.includes('enel') || 
-        emissorLower.includes('sabesp') || 
-        emissorLower.includes('sanepar') || 
-        emissorLower.includes('servopa') || 
-        emissorLower.includes('consórcio') || 
-        emissorLower.includes('consorcio') || 
-        emissorLower.includes('aluguel') || 
-        emissorLower.includes('condom') || 
-        textoCompleto.includes('vivo') || 
-        textoCompleto.includes('fibra 500') || 
-        textoCompleto.includes('servopa');
+      // Cartões emitidos por financeiras (Renner, C&A, Marisa etc.) são pagos por boleto
+      // bancário — o documento tem um boleto embutido mesmo sendo, na prática, uma fatura
+      // de cartão com dezenas de compras/parcelas no extrato. Confiar só em "tem boleto" faz
+      // esse tipo de fatura virar 1 lançamento único e perder o rastreamento de parcelas.
+      // Poucos itens extraídos (conta de serviço típica) ainda é tratado como boleto; muitos
+      // itens (extrato de cartão) é tratado como fatura de cartão independente do boleto.
+      const pareceExtratoDeCartao = itemsList.length > 5;
+
+      const isContaServicoOuBoleto =
+        !pareceExtratoDeCartao && (
+          data.tipoDocumento === 'boleto_cobranca' ||
+          emissorLower.includes('vivo') ||
+          emissorLower.includes('claro') ||
+          emissorLower.includes('tim') ||
+          emissorLower.includes('oi') ||
+          emissorLower.includes('copel') ||
+          emissorLower.includes('enel') ||
+          emissorLower.includes('sabesp') ||
+          emissorLower.includes('sanepar') ||
+          emissorLower.includes('servopa') ||
+          emissorLower.includes('consórcio') ||
+          emissorLower.includes('consorcio') ||
+          emissorLower.includes('aluguel') ||
+          emissorLower.includes('condom') ||
+          textoCompleto.includes('vivo') ||
+          textoCompleto.includes('fibra 500') ||
+          textoCompleto.includes('servopa')
+        );
 
       // Auto-detect document type
       if (isContaServicoOuBoleto) {

@@ -1039,25 +1039,12 @@ export function App() {
     const dataVencimentoFatura = opcoes?.dataVencimento || new Date().toISOString().split('T')[0];
     const selecionados = itens.filter(i => i.selecionado);
 
-    const isBoletoAvulso = 
-      opcoes?.tipoDocumento === 'boleto_cobranca' || 
-      emissorLower.includes('vivo') || 
-      emissorLower.includes('claro') || 
-      emissorLower.includes('tim') || 
-      emissorLower.includes('oi') || 
-      emissorLower.includes('copel') || 
-      emissorLower.includes('enel') || 
-      emissorLower.includes('sabesp') || 
-      emissorLower.includes('sanepar') || 
-      emissorLower.includes('servopa') || 
-      emissorLower.includes('consórcio') || 
-      emissorLower.includes('consorcio') || 
-      emissorLower.includes('condom') || 
-      emissorLower.includes('aluguel') ||
-      selecionados.some(s => {
-        const d = s.descricao.toLowerCase();
-        return d.includes('vivo') || d.includes('fibra') || d.includes('servopa') || d.includes('consórcio') || d.includes('consorcio') || d.includes('boleto');
-      });
+    // A classificação (fatura de cartão vs. boleto/conta avulsa) é decidida uma única vez na
+    // tela de importação — ali o usuário vê o documento e pode corrigir a detecção automática
+    // manualmente. Reaplicar aqui uma heurística própria por palavra-chave do emissor permitiria
+    // que ela discordasse da tela (ex: ignorando silenciosamente quando o usuário clica em
+    // "Fatura de Cartão" para um cartão de financeira cujo nome bate com algum destes termos).
+    const isBoletoAvulso = opcoes?.tipoDocumento === 'boleto_cobranca';
 
     // FLUXO A: BOLETO / CONTA DE SERVIÇO / TELECOM A PAGAR DIRETA (Ex: Vivo, Consórcio Servopa, Copel, etc.)
     if (isBoletoAvulso) {
