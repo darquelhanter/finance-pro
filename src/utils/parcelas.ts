@@ -376,6 +376,8 @@ export class ParcelamentoService {
         return la === y && lm === m;
       });
 
+      let valorTotal = 0;
+
       for (const lb of lancamentosBanco) {
         const { descricaoBase, parcelaAtual, totalParcelas } = this.extrairInfoDescricao(lb.descricao);
         const pNum = lb.parcela?.numero || parcelaAtual;
@@ -395,6 +397,12 @@ export class ParcelamentoService {
         });
 
         idsProcessados.add(lb.id);
+
+        // Itens apenasVisualizacao (detalhamento de fatura) já têm seu valor somado dentro
+        // da Fatura Consolidada do cartão — contá-los aqui de novo infla o Total Estimado.
+        if (!lb.apenasVisualizacao) {
+          valorTotal += Number(lb.valor) || 0;
+        }
 
         if (isUltima) {
           itensFinalizando.push({
@@ -443,6 +451,9 @@ export class ParcelamentoService {
                 isUltimaParcela: isUltima,
                 compraPaiId: grupo.id,
               });
+              // Parcela projetada (ainda não gravada no banco) não está dentro de nenhuma
+              // Fatura Consolidada existente — soma normalmente.
+              valorTotal += grupo.valorParcela;
 
               if (isUltima) {
                 itensFinalizando.push({
@@ -456,7 +467,6 @@ export class ParcelamentoService {
         }
       }
 
-      const valorTotal = itensDoMes.reduce((acc, it) => acc + it.valor, 0);
       const valorTotalLiberadoProximoMes = itensFinalizando.reduce((acc, it) => acc + it.valorLiberado, 0);
 
       projecoes.push({
