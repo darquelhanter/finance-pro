@@ -1247,6 +1247,14 @@ export function App() {
       const novoId = lancamentoExistente?.id || `lanc_imp_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
       const camposReimportacao = mesclarCamposReimportacao(lancamentoExistente, item.categoriaSugeridaId, deveCriarContaPagar);
 
+      // A IA extrai a data ORIGINAL da compra (ex: a parcela da Adidas foi comprada em
+      // junho), mas uma compra parcelada é cobrada no ciclo desta fatura, não naquele mês —
+      // usar a data original como vencimento "nasce" a parcela no mês errado e quebra a
+      // projeção de parcelas futuras em FaturasParcelamentosView. Itens não parcelados
+      // (compra à vista) continuam usando a própria data da transação.
+      const ehParcelado = !!(numParc && totParc && totParc > 1);
+      const dataLancamento = ehParcelado ? dataVencimentoFatura : dataItem;
+
       const lanc: Lancamento = {
         id: novoId,
         tipo: 'despesa',
@@ -1255,11 +1263,11 @@ export function App() {
         categoriaId: camposReimportacao.categoriaId || (categorias[0]?.id || 'cat_outros'),
         cartaoId: targetCartaoId,
         faturaId: faturaId || 'fat_atual',
-        dataCompetencia: dataItem,
-        dataVencimento: dataItem,
+        dataCompetencia: dataLancamento,
+        dataVencimento: dataLancamento,
         status: camposReimportacao.status,
         apenasVisualizacao: camposReimportacao.apenasVisualizacao,
-        parcela: numParc && totParc && totParc > 1 ? {
+        parcela: ehParcelado ? {
           numero: numParc,
           total: totParc,
           lancamentoPaiId: `imp_parc_${slugificarDescricao(descLimpa)}_${targetCartaoId}_${totParc}`,
@@ -1269,7 +1277,7 @@ export function App() {
           'item_fatura',
           'detalhamento_cartao',
           'extrato_cartao',
-          ...(numParc && totParc && totParc > 1 ? ['parcelamento', `parc_${numParc}_${totParc}`] : [])
+          ...(ehParcelado ? ['parcelamento', `parc_${numParc}_${totParc}`] : [])
         ])),
         observacoes: `Compra da fatura ${nomeFinalCartao} (visualização no extrato)${numParc && totParc ? ` - Parcela ${numParc}/${totParc}` : ''}`.trim(),
         criadoEm: lancamentoExistente?.criadoEm || new Date().toISOString(),
